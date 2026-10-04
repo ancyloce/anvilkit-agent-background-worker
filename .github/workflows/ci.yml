@@ -1,0 +1,58 @@
+# Independent verification of anvilkit-agent-background-worker from this
+# repository alone: type-check, lint, build, tests (Docker-backed PostgreSQL,
+# Valkey and NATS through Testcontainers; the anvilkit_knowledge migrations
+# come from a sparse checkout of the parent), the image (the events schema
+# from a checkout of the contracts repository at the commit pnpm-lock.yaml and
+# the Dockerfile's digest pin: 063f91f, tag go/v0.1.4) and the chart.
+name: ci
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+env:
+  ANVILKIT_KNOWLEDGE_MIGRATIONS_DIR: ${{ github.workspace }}/parent/jobs/migration/internal/migrate/sql/knowledge
+  ANVILKIT_BACKGROUND_WORKER_CONTRACTS_DIR: ${{ github.workspace }}/contracts
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ancyloce/anvilkit-services
+          path: parent
+          sparse-checkout: jobs/migration/internal/migrate/sql/knowledge
+      - uses: actions/checkout@v4
+        with:
+          repository: ancyloce/anvilkit-agent-contracts
+          ref: 063f91f2bfa2cdb46403638d3e3d23dfcc956303
+          path: contracts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.19.0"
+      - run: npm install -g pnpm@12.3.4
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run check-types
+      - run: pnpm run lint
+      - run: pnpm run build
+      - run: pnpm test
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ancyloce/anvilkit-agent-contracts
+          ref: 063f91f2bfa2cdb46403638d3e3d23dfcc956303
+          path: contracts
+      - run: docker build --build-context contracts=contracts -t anvilkit-agent-background-worker:ci .
+  chart:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: "v3.19.0"
+      - run: helm lint deploy/chart --set queue.secret.name=queue-valkey --set owners.knowledge.address=anvilkit-agent-knowledge:9105 --set owners.mcp.address=anvilkit-agent-mcp:9106
+      - run: helm template anvilkit-agent-background-worker deploy/chart --set queue.secret.name=queue-valkey --set owners.knowledge.address=anvilkit-agent-knowledge:9105 --set owners.mcp.address=anvilkit-agent-mcp:9106 > /dev/null
