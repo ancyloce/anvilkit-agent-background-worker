@@ -1,0 +1,57 @@
+# Reviewed configuration of anvilkit-agent-background-worker (DD-09 §1/§4):
+# the secret-free, placement-free bounds of the Worker (`worker` entry) and
+# of the owner queue relay (`relay` entry, run beside each owner). Placements
+# and secrets arrive only through the allowlisted environment:
+# ANVILKIT_BACKGROUND_WORKER_HEALTH_LISTEN, _QUEUE_URL or _QUEUE_URL_FILE (the
+# queue Valkey — a separate instance from any cache), _NATS_URL,
+# _KNOWLEDGE_ADDRESS, _MCP_ADDRESS, _CONTRACTS_DIR, _BULL_BOARD_LISTEN,
+# _RELAY_OWNER, _RELAY_DATABASE_URL or _RELAY_DATABASE_URL_FILE (the owner's
+# relay role). Any other ANVILKIT_BACKGROUND_WORKER_* variable, any unknown
+# key here and any secret or placement key here rejects the candidate.
+# DEVELOPMENT_ONLY bounds below are not production capacity (ENV-05).
+health:
+  listen: 127.0.0.1:9127
+queue:
+  # BullMQ key prefix: anvilkit:<owner>:<queue>:... (application namespace
+  # anvilkit:<domain>:, the library's internal keys stay its own).
+  prefix: anvilkit
+worker:
+  concurrency: 4
+  # The lease asked of the owner and the heartbeat that keeps it; losing the
+  # lease stops the handler.
+  lease_seconds: 60
+  heartbeat_interval: 15s
+  max_input_bytes: 65536
+  # Above the parser profile's 600 s deadline plus its grace: a slow parse
+  # ends on the Job's deadline (Knowledge's verdict), not on this bound.
+  handler_timeout: 12m
+  # Queue-level delivery bounds (BullMQ attempts/backoff/lock/stall); the
+  # owner's attempt bound is the business limit.
+  attempts: 3
+  backoff: 5s
+  lock_duration: 60s
+  stalled_interval: 30s
+  max_stalled_count: 1
+  # A lost submission receipt: the identical result is resubmitted this many
+  # times, then the owner is queried.
+  submit_retries: 3
+  owner_timeout: 10s
+  shutdown_timeout: 30s
+bull_board:
+  # Read-only by default; a retry from the board re-enqueues a job whose
+  # claim still passes the owner's admission (budget, revocation, state).
+  enabled: false
+  listen: 127.0.0.1:9128
+  read_only: true
+relay:
+  # The fixed durable pull consumer of the owner's background.requested
+  # subject: explicit ACK after the inbox commit, bounded ack wait and
+  # deliveries; the reconcile loop reconstructs queue entries from durable
+  # requests older than reconcile_age that have no queue entry.
+  batch: 16
+  ack_wait: 30s
+  max_deliver: 100
+  reconcile_interval: 10s
+  reconcile_age: 5s
+  reconcile_limit: 500
+  shutdown_timeout: 30s

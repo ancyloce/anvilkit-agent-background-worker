@@ -147,3 +147,7 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# anvilkit-agent-background-worker: local tooling state (the package rules
+# node_modules/, dist/, *.tsbuildinfo and .env are covered above).
+/.local/

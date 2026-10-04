@@ -1,0 +1,21 @@
+# This directory is its own pnpm workspace root (one package), independent of
+# the parent's workspace globs, as contracts/ and the other TypeScript
+# services are: the lockfile here pins the toolchain and the exact contracts
+# commit it consumes (@anvilkit/generated-clients as a git-hosted dependency
+# of the contracts repository, resolved by commit hash and content integrity).
+packages: []
+# No lifecycle script runs in this install: esbuild's postinstall only fetches
+# a platform binary when its optional platform package is absent; protobufjs
+# (transitive of @grpc/grpc-js) only prints a notice; msgpackr-extract
+# (transitive of bullmq) builds an optional native accelerator that the
+# pure-JavaScript msgpackr replaces; ssh2 and cpu-features (transitive of
+# the testcontainers dev dependency) build optional native bindings this
+# package never uses.
+allowBuilds:
+  cpu-features: false
+  esbuild: false
+  msgpackr-extract: false
+  protobufjs: false
+  ssh2: false
+minimumReleaseAgeExclude:
+  - '@types/node@24.13.5'

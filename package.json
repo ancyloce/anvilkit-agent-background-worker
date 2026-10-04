@@ -1,0 +1,53 @@
+{
+  "name": "@anvilkit/agent-background-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Background Worker of the AnvilKit Agent platform (DD-09 §1, delivery.md P14): the BullMQ Worker that claims durable Knowledge/MCP requests through the owners' BackgroundTaskService, runs bounded handlers (the local-check fixture in this build) and submits results — owner APIs only, no business database; and the owner queue relay (the `relay` entry, run beside each owner with its relay role) that turns committed background.requested events into BullMQ entries and reconstructs missing ones from the durable requests.",
+  "type": "module",
+  "packageManager": "pnpm@12.3.4",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json && node build.mjs",
+    "check-types": "tsc --noEmit -p tsconfig.json",
+    "lint": "biome check src test build.mjs",
+    "test": "vitest run",
+    "start": "node dist/main.js worker"
+  },
+  "dependencies": {
+    "@anvilkit/generated-clients": "github:ancyloce/anvilkit-agent-contracts#063f91f2bfa2cdb46403638d3e3d23dfcc956303&path:ts",
+    "@bufbuild/protobuf": "2.15.0",
+    "@bufbuild/protovalidate": "1.2.0",
+    "@bull-board/api": "9.10.1",
+    "@bull-board/express": "9.10.1",
+    "@grpc/grpc-js": "1.14.4",
+    "@nats-io/jetstream": "3.4.0",
+    "@nats-io/nats-core": "3.4.0",
+    "@nats-io/transport-node": "3.4.0",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "0.222.0",
+    "@opentelemetry/resources": "2.11.0",
+    "@opentelemetry/sdk-trace": "2.11.0",
+    "ajv": "8.20.0",
+    "bullmq": "6.3.6",
+    "express": "5.2.1",
+    "ioredis": "6.0.0",
+    "jsonc-parser": "3.3.1",
+    "lossless-json": "4.3.1",
+    "pg": "8.23.0",
+    "prom-client": "15.1.3",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.12",
+    "@testcontainers/postgresql": "12.1.0",
+    "@types/express": "5.0.6",
+    "@types/node": "24.13.5",
+    "@types/pg": "8.23.1",
+    "esbuild": "0.28.2",
+    "testcontainers": "12.1.0",
+    "typescript": "5.9.3",
+    "vitest": "5.0.1"
+  }
+}
