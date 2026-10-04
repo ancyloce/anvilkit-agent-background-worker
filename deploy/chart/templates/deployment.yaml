@@ -1,0 +1,130 @@
+{{- include "anvilkit-agent-background-worker.require" . -}}
+{{- $cfg := deepCopy .Values.config -}}
+{{- $_ := set $cfg.bull_board "enabled" .Values.bullBoard.enabled -}}
+{{- $_ = set $cfg.bull_board "read_only" .Values.bullBoard.readOnly -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "anvilkit-agent-background-worker.fullname" . }}
+  labels:
+    {{- include "anvilkit-agent-background-worker.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "anvilkit-agent-background-worker.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "anvilkit-agent-background-worker.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: background-worker
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ toYaml $cfg | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "anvilkit-agent-background-worker.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: worker
+          image: {{ include "anvilkit-agent-background-worker.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["worker"]
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            - name: ANVILKIT_BACKGROUND_WORKER_CONFIG
+              value: /etc/anvilkit/anvilkit-agent-background-worker/config.yaml
+            - name: ANVILKIT_BACKGROUND_WORKER_HEALTH_LISTEN
+              value: {{ printf "%s:%d" .Values.listen.address (int .Values.health.port) | quote }}
+            {{- if .Values.telemetry.otlpEndpoint }}
+            - name: ANVILKIT_BACKGROUND_WORKER_TELEMETRY_OTLP_ENDPOINT
+              value: {{ .Values.telemetry.otlpEndpoint | quote }}
+            {{- end }}
+            - name: ANVILKIT_BACKGROUND_WORKER_QUEUE_URL_FILE
+              value: /var/run/secrets/anvilkit/queue/{{ .Values.queue.secret.key }}
+            {{- if .Values.owners.knowledge.address }}
+            - name: ANVILKIT_BACKGROUND_WORKER_KNOWLEDGE_ADDRESS
+              value: {{ .Values.owners.knowledge.address | quote }}
+            {{- end }}
+            {{- if .Values.owners.mcp.address }}
+            - name: ANVILKIT_BACKGROUND_WORKER_MCP_ADDRESS
+              value: {{ .Values.owners.mcp.address | quote }}
+            {{- end }}
+            {{- if .Values.bullBoard.enabled }}
+            - name: ANVILKIT_BACKGROUND_WORKER_BULL_BOARD_LISTEN
+              value: {{ printf "%s:%d" .Values.listen.address (int .Values.bullBoard.port) | quote }}
+            {{- end }}
+          ports:
+            - name: health
+              containerPort: {{ .Values.health.port }}
+              protocol: TCP
+            {{- if .Values.bullBoard.enabled }}
+            - name: bull-board
+              containerPort: {{ .Values.bullBoard.port }}
+              protocol: TCP
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/anvilkit/anvilkit-agent-background-worker
+              readOnly: true
+            - name: queue
+              mountPath: /var/run/secrets/anvilkit/queue
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "anvilkit-agent-background-worker.fullname" . }}
+        - name: queue
+          secret:
+            secretName: {{ .Values.queue.secret.name }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

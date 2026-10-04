@@ -1,0 +1,140 @@
+# Chart values of anvilkit-agent-background-worker: the BullMQ Worker
+# Deployment. It reaches the owners' BackgroundTaskService and the queue
+# Valkey only (no business database, no NATS: the relays are the owners'
+# sidecars). Environment values are supplied by the deploying repository;
+# secrets never enter this chart.
+
+image:
+  repository: anvilkit-agent-background-worker
+  tag: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+replicaCount: 2
+
+# HorizontalPodAutoscaler (autoscaling/v2). Off unless the environment enables
+# it with an explicit maxReplicas: the maximum is bounded by downstream caps
+# and the database connection budget (deploy/gitops/lock.yaml), never a chart
+# default. While enabled the Deployment leaves replicas to the autoscaler.
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 0
+  targetCPUUtilizationPercentage: 70
+
+serviceAccount:
+  create: true
+  name: ""
+  automountServiceAccountToken: false
+
+listen:
+  address: 0.0.0.0
+health:
+  port: 9127
+
+# The queue Valkey (ANVILKIT_BACKGROUND_WORKER_QUEUE_URL_FILE): a Secret
+# mounted as a file; a separate instance from any cache. Required.
+queue:
+  secret:
+    name: ""
+    key: url
+
+# The owners' BackgroundTaskService placements; at least one is required.
+owners:
+  knowledge:
+    address: ""
+  mcp:
+    address: ""
+
+# Bull Board (C05): off by default; read-only when on.
+bullBoard:
+  enabled: false
+  port: 9128
+  readOnly: true
+
+config:
+  health:
+    listen: 127.0.0.1:9127
+  queue:
+    prefix: anvilkit
+  worker:
+    concurrency: 4
+    lease_seconds: 60
+    heartbeat_interval: 15s
+    max_input_bytes: 65536
+    handler_timeout: 5m
+    attempts: 3
+    backoff: 5s
+    lock_duration: 60s
+    stalled_interval: 30s
+    max_stalled_count: 1
+    submit_retries: 3
+    owner_timeout: 10s
+    shutdown_timeout: 30s
+  bull_board:
+    enabled: false
+    listen: 127.0.0.1:9128
+    read_only: true
+  relay:
+    batch: 16
+    ack_wait: 30s
+    max_deliver: 100
+    reconcile_interval: 10s
+    reconcile_age: 5s
+    reconcile_limit: 500
+    shutdown_timeout: 30s
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+probes:
+  startup:
+    periodSeconds: 2
+    failureThreshold: 30
+  readiness:
+    periodSeconds: 5
+    failureThreshold: 3
+  liveness:
+    periodSeconds: 10
+    failureThreshold: 3
+
+# Handlers drain within worker.shutdown_timeout; the grace period exceeds it.
+terminationGracePeriodSeconds: 60
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+podLabels: {}
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+
+# A voluntary disruption (node drain, rollout) keeps at least one Pod serving.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Telemetry placement (P23): the collector's OTLP/HTTP base URL for spans
+# (ANVILKIT_BACKGROUND_WORKER_TELEMETRY_OTLP_ENDPOINT); empty disables it. The metrics are on
+# the health listener's /metrics; scraping is the environment's pod annotations.
+telemetry:
+  otlpEndpoint: ""

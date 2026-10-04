@@ -1,0 +1,6 @@
+apiVersion: v2
+name: anvilkit-agent-background-worker
+description: The AnvilKit Agent Background Worker (anvilkit-agent-background-worker) - the service's own chart; the owner queue relays run from the same image inside the Knowledge and MCP charts.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
