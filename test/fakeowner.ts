@@ -1,5 +1,7 @@
 // A scripted owner (anvilkit.knowledge.v1.BackgroundTaskService over
-// grpc-js) for the Worker tests: it records every call and answers as the
+// grpc-js) for the Worker tests — a TEST DOUBLE, never imported by src/: it
+// serves mTLS under the lab PKI (client certificates required and verified
+// against the lab CA), records every call and answers as the
 // scenario says — one claimant per generation, heartbeats that can refuse,
 // submissions that can be unavailable once. The real owners' rules are
 // proven in their own repositories and by the parent's integration scenario.
@@ -14,6 +16,7 @@ import {
 	TaskState,
 } from "@anvilkit/generated-clients/proto/anvilkit/knowledge/v1/knowledge";
 import { Server, ServerCredentials, type ServiceError, status } from "@grpc/grpc-js";
+import { pki } from "./harness.js";
 
 export interface ScriptedTask {
 	taskKind: string;
@@ -133,8 +136,14 @@ export class FakeOwner {
 		};
 		this.server.addService(BackgroundTaskServiceService, impl);
 		const port = await new Promise<number>((resolve, reject) =>
-			this.server.bindAsync("127.0.0.1:0", ServerCredentials.createInsecure(), (err, p) =>
-				err ? reject(err) : resolve(p),
+			this.server.bindAsync(
+				"127.0.0.1:0",
+				ServerCredentials.createSsl(
+					pki().ca.pem,
+					[{ private_key: pki().ownerLeaf.keyPem, cert_chain: pki().ownerLeaf.certPem }],
+					true,
+				),
+				(err, p) => (err ? reject(err) : resolve(p)),
 			),
 		);
 		this.address = `127.0.0.1:${port}`;

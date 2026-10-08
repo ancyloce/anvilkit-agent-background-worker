@@ -17,6 +17,7 @@ import { GenericContainer, type StartedTestContainer, Wait } from "testcontainer
 import { type Config, loadFrom } from "../src/config.js";
 import { contractsDir } from "../src/contracts.js";
 import { Metrics } from "../src/metrics.js";
+import { type CA, files, issue, type Leaf, mount, newCA, spiffe, tempDir } from "./pki.js";
 
 export function migrationsDir(): string | undefined {
 	const env = process.env.ANVILKIT_KNOWLEDGE_MIGRATIONS_DIR;
@@ -124,7 +125,54 @@ export function freePort(): Promise<number> {
 	});
 }
 
-/** A configuration for the tests: the reviewed file plus the lab's placements. */
+/**
+ * The lab PKI (P0.1): one throwaway CA, the worker's own identity
+ * (spiffe://anvilkit.local/ns/anvilkit-apps/sa/anvilkit-agent-background-worker)
+ * mounted the way a Secret is, and the owner double's server leaf.
+ */
+export interface LabPki {
+	ca: CA;
+	workerDir: string;
+	ownerLeaf: Leaf;
+}
+
+let labPki: LabPki | undefined;
+
+export function pki(): LabPki {
+	if (labPki) return labPki;
+	const ca = newCA("lab");
+	const workerDir = tempDir();
+	mount(
+		workerDir,
+		issue(ca, "anvilkit-agent-background-worker", [
+			spiffe("anvilkit.local", "anvilkit-apps", "anvilkit-agent-background-worker"),
+		]),
+		ca.pem,
+	);
+	labPki = {
+		ca,
+		workerDir,
+		ownerLeaf: issue(
+			ca,
+			"anvilkit-agent-knowledge",
+			[spiffe("anvilkit.local", "anvilkit-apps", "anvilkit-agent-knowledge")],
+			["anvilkit-agent-knowledge"],
+		),
+	};
+	return labPki;
+}
+
+/** The identity environment of the worker under the lab PKI. */
+export function identityEnv(): Record<string, string> {
+	const f = files(pki().workerDir);
+	return {
+		ANVILKIT_BACKGROUND_WORKER_IDENTITY_CERT_FILE: f.certFile,
+		ANVILKIT_BACKGROUND_WORKER_IDENTITY_KEY_FILE: f.keyFile,
+		ANVILKIT_BACKGROUND_WORKER_IDENTITY_CA_FILE: f.caFile,
+	};
+}
+
+/** A configuration for the tests: the reviewed file plus the lab's placements and the lab PKI. */
 export function labConfig(lab: Lab, overrides: Record<string, string> = {}, fileContent = ""): Config {
 	const dir = mkdtempSync(path.join(tmpdir(), "bg-worker-"));
 	const file = path.join(dir, "config.yaml");
@@ -140,6 +188,7 @@ export function labConfig(lab: Lab, overrides: Record<string, string> = {}, file
 		ANVILKIT_BACKGROUND_WORKER_RELAY_DATABASE_URL: lab.relayUrl,
 		ANVILKIT_BACKGROUND_WORKER_KNOWLEDGE_ADDRESS: "127.0.0.1:1",
 		ANVILKIT_BACKGROUND_WORKER_CONTRACTS_DIR: contractsDir(),
+		...identityEnv(),
 		...overrides,
 	});
 }

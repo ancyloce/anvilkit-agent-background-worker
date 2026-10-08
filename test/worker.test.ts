@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Config } from "../src/config.js";
 import { silentLogger } from "../src/log.js";
 import { startWorker } from "../src/main.js";
-import { connectOwner } from "../src/owner.js";
+import { connectOwner, OwnerTransports } from "../src/owner.js";
 import { connection, type JobPayload, jobIdOf, jobOptions } from "../src/queue.js";
 import { BackgroundWorker } from "../src/worker/worker.js";
 import { FakeOwner } from "./fakeowner.js";
@@ -16,6 +16,7 @@ import { freePort, type Lab, labConfig, metricValue, newMetrics, startLab } from
 let lab: Lab;
 let owner: FakeOwner;
 let cfg: Config;
+let transports: OwnerTransports;
 const conns: ReturnType<typeof connection>[] = [];
 
 const digest = (b: Buffer) => `sha256:${createHash("sha256").update(b).digest("hex")}`;
@@ -52,7 +53,7 @@ function newWorker() {
 	const conn = connection(cfg.queue.url);
 	conns.push(conn);
 	const { metrics, registry } = newMetrics();
-	const client = connectOwner("knowledge", owner.address, 2000);
+	const client = connectOwner("knowledge", owner.address, 2000, transports.for("knowledge"));
 	const worker = new BackgroundWorker(cfg, { knowledge: client }, conn, metrics, silentLogger);
 	return { worker, registry, conn, client };
 }
@@ -72,9 +73,11 @@ beforeAll(async () => {
 	owner = new FakeOwner();
 	await owner.start();
 	cfg = labConfig(lab, { ANVILKIT_BACKGROUND_WORKER_KNOWLEDGE_ADDRESS: owner.address });
+	transports = new OwnerTransports(cfg);
 });
 
 afterAll(async () => {
+	transports.close();
 	owner.stop();
 	for (const c of conns) c.disconnect();
 	await lab.stop();
@@ -209,7 +212,7 @@ it("F06 recreated deliveries in one live worker receive distinct identities", as
 it("F12 bounds shutdown of a handler that ignores its abort signal", async () => {
 	const conn = connection(cfg.queue.url);
 	const monitor = connection(cfg.queue.url);
-	const client = connectOwner("knowledge", owner.address, 2000);
+	const client = connectOwner("knowledge", owner.address, 2000, transports.for("knowledge"));
 	const { metrics } = newMetrics();
 	const bounded = {
 		...cfg,
@@ -322,7 +325,7 @@ it("F12 interrupts unresponsive queue finalization after owner acceptance and re
 	const url = `redis://${valkey.getHost()}:${valkey.getMappedPort(6379)}`;
 	const conn = connection(url);
 	const monitor = connection(url);
-	const client = connectOwner("knowledge", owner.address, 2000);
+	const client = connectOwner("knowledge", owner.address, 2000, transports.for("knowledge"));
 	const { metrics, registry } = newMetrics();
 	const bounded = {
 		...cfg,
