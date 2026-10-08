@@ -54,5 +54,5 @@ jobs:
       - uses: azure/setup-helm@v4
         with:
           version: "v3.19.0"
-      - run: helm lint deploy/chart --set queue.secret.name=queue-valkey --set owners.knowledge.address=anvilkit-agent-knowledge:9105 --set owners.mcp.address=anvilkit-agent-mcp:9106
-      - run: helm template anvilkit-agent-background-worker deploy/chart --set queue.secret.name=queue-valkey --set owners.knowledge.address=anvilkit-agent-knowledge:9105 --set owners.mcp.address=anvilkit-agent-mcp:9106 > /dev/null
+      - run: helm lint deploy/chart --set queue.secret.name=queue-valkey --set owners.knowledge.address=anvilkit-agent-knowledge:9105 --set owners.mcp.address=anvilkit-agent-mcp:9106 --set identity.trustDomain=ci.example --set identity.certificate.issuerRef.name=ci-issuer
+      - run: helm template anvilkit-agent-background-worker deploy/chart --set queue.secret.name=queue-valkey --set owners.knowledge.address=anvilkit-agent-knowledge:9105 --set owners.mcp.address=anvilkit-agent-mcp:9106 --set identity.trustDomain=ci.example --set identity.certificate.issuerRef.name=ci-issuer > /dev/null
