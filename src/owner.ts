@@ -6,8 +6,59 @@
 import * as knowledge from "@anvilkit/generated-clients/proto/anvilkit/knowledge/v1/knowledge";
 import * as mcp from "@anvilkit/generated-clients/proto/anvilkit/mcp/v1/mcp";
 import { validateJson } from "@anvilkit/generated-clients/validation/rpc";
-import { type ChannelCredentials, credentials, Metadata, type ServiceError, status } from "@grpc/grpc-js";
-import type { Owner } from "./config.js";
+import {
+	type ChannelCredentials,
+	type ChannelOptions,
+	credentials,
+	Metadata,
+	type ServiceError,
+	status,
+} from "@grpc/grpc-js";
+import type { Config, Owner } from "./config.js";
+import { clientCredentials, clientOptions, IdentityWatcher } from "./identity.js";
+
+/** The transport of an owner connection: the credential and the channel options (the server name to verify). */
+export interface Transport {
+	creds: ChannelCredentials;
+	options: ChannelOptions;
+}
+
+/**
+ * The owner transports of this process under identity: one watcher feeds
+ * every client under mtls; development (plaintext) exists only because the
+ * configuration loader admitted it under the top-level guard.
+ */
+export class OwnerTransports {
+	private readonly watcher?: IdentityWatcher;
+
+	constructor(
+		private readonly cfg: Pick<Config, "identity" | "owners" | "development">,
+		log: { warn(msg: string, f?: Record<string, string>): void } = { warn: () => {} },
+	) {
+		if (cfg.identity.mode === "mtls") {
+			const id = cfg.identity;
+			this.watcher = new IdentityWatcher(
+				{ certFile: id.certFile, keyFile: id.keyFile, caFile: id.caFile },
+				id.reloadIntervalMs,
+				log,
+			);
+			this.watcher.start();
+		} else {
+			if (!cfg.development.enabled) throw new Error("identity.mode development without development.enabled");
+			log.warn("DEVELOPMENT_ONLY plaintext owner transport; qualifies no production identity");
+		}
+	}
+
+	for(owner: Owner): Transport {
+		if (this.watcher)
+			return { creds: clientCredentials(this.watcher), options: clientOptions(this.cfg.owners[owner].serverName) };
+		return { creds: credentials.createInsecure(), options: {} };
+	}
+
+	close(): void {
+		this.watcher?.stop();
+	}
+}
 
 export type TaskStateName =
 	| "pending"
@@ -164,8 +215,8 @@ function promised<Res>(
 	);
 }
 
-function knowledgeBinding(address: string, timeoutMs: number, creds: ChannelCredentials): Binding {
-	const c = new knowledge.BackgroundTaskServiceClient(address, creds);
+function knowledgeBinding(address: string, timeoutMs: number, t: Transport): Binding {
+	const c = new knowledge.BackgroundTaskServiceClient(address, t.creds, t.options);
 	const ns = "anvilkit.knowledge.v1";
 	return {
 		claim(taskId, generation, workerId, leaseSeconds) {
@@ -195,8 +246,8 @@ function knowledgeBinding(address: string, timeoutMs: number, creds: ChannelCred
 	};
 }
 
-function mcpBinding(address: string, timeoutMs: number, creds: ChannelCredentials): Binding {
-	const c = new mcp.BackgroundTaskServiceClient(address, creds);
+function mcpBinding(address: string, timeoutMs: number, t: Transport): Binding {
+	const c = new mcp.BackgroundTaskServiceClient(address, t.creds, t.options);
 	const ns = "anvilkit.mcp.v1";
 	return {
 		claim(taskId, generation, workerId, leaseSeconds) {
@@ -223,14 +274,9 @@ function mcpBinding(address: string, timeoutMs: number, creds: ChannelCredential
 	};
 }
 
-/** One owner's client over grpc-js; plaintext (DEVELOPMENT_ONLY; workload mTLS is ENV-03). */
-export function connectOwner(
-	owner: Owner,
-	address: string,
-	timeoutMs: number,
-	creds: ChannelCredentials = credentials.createInsecure(),
-): OwnerClient {
-	const b = owner === "knowledge" ? knowledgeBinding(address, timeoutMs, creds) : mcpBinding(address, timeoutMs, creds);
+/** One owner's client over grpc-js under the given transport (P0.1). */
+export function connectOwner(owner: Owner, address: string, timeoutMs: number, t: Transport): OwnerClient {
+	const b = owner === "knowledge" ? knowledgeBinding(address, timeoutMs, t) : mcpBinding(address, timeoutMs, t);
 	return {
 		owner,
 		async claim(taskId, generation, workerId, leaseSeconds) {
@@ -267,12 +313,8 @@ export interface IngestClient {
  * and observe the parser Job of its claim. The answer never carries a key,
  * a URL or document text; Knowledge decides what the result is.
  */
-export function connectIngest(
-	address: string,
-	timeoutMs: number,
-	creds: ChannelCredentials = credentials.createInsecure(),
-): IngestClient {
-	const c = new knowledge.IngestServiceClient(address, creds);
+export function connectIngest(address: string, timeoutMs: number, t: Transport): IngestClient {
+	const c = new knowledge.IngestServiceClient(address, t.creds, t.options);
 	return {
 		async advance(taskId, generation, workerId, inputDigest) {
 			const req = knowledge.AdvanceParseRequest.fromPartial({ taskId, generation, workerId, inputDigest });
@@ -313,12 +355,8 @@ export interface IndexClient {
  * claimant asks Knowledge to write and verify the next batch of its index
  * entry. No text, vector, key or collection name crosses.
  */
-export function connectIndex(
-	address: string,
-	timeoutMs: number,
-	creds: ChannelCredentials = credentials.createInsecure(),
-): IndexClient {
-	const c = new knowledge.IngestServiceClient(address, creds);
+export function connectIndex(address: string, timeoutMs: number, t: Transport): IndexClient {
+	const c = new knowledge.IngestServiceClient(address, t.creds, t.options);
 	return {
 		async advanceIndex(taskId, generation, workerId, inputDigest) {
 			const req = knowledge.AdvanceIndexRequest.fromPartial({ taskId, generation, workerId, inputDigest });
@@ -352,12 +390,8 @@ export interface ProjectionClient {
  * projection target and verify it. No content, vector, key or collection
  * name crosses; the progress has the index step's shape.
  */
-export function connectProjection(
-	address: string,
-	timeoutMs: number,
-	creds: ChannelCredentials = credentials.createInsecure(),
-): ProjectionClient {
-	const c = new knowledge.IngestServiceClient(address, creds);
+export function connectProjection(address: string, timeoutMs: number, t: Transport): ProjectionClient {
+	const c = new knowledge.IngestServiceClient(address, t.creds, t.options);
 	return {
 		async advanceProjection(taskId, generation, workerId, inputDigest) {
 			const req = knowledge.AdvanceProjectionRequest.fromPartial({ taskId, generation, workerId, inputDigest });

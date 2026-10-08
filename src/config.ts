@@ -20,13 +20,25 @@ export const ownerQueues: Record<Owner, string[]> = {
 	mcp: ["mcp-catalog-refresh", "local-check"],
 };
 
+/** The workload identity of the owner clients (P0.1): mtls presents the watched certificate and verifies the owner by server name; development is plaintext and admitted only under development.enabled. */
+export interface IdentityConfig {
+	mode: "mtls" | "development";
+	certFile: string;
+	keyFile: string;
+	caFile: string;
+	reloadIntervalMs: number;
+}
+
 export interface Config {
+	/** The top-level DEVELOPMENT_ONLY guard: a plaintext owner transport needs identity.mode development and this; it downgrades nothing by itself. File-only. */
+	development: { enabled: boolean };
+	identity: IdentityConfig;
 	health: { listen: string };
 	/** Spans over OTLP/HTTP to the collector when placed (none otherwise), sampled at sampleRatio. */
 	telemetry: { otlpEndpoint: string; sampleRatio: number };
 	queue: { url: string; prefix: string };
 	nats: { url: string };
-	owners: Record<Owner, { address: string }>;
+	owners: Record<Owner, { address: string; serverName: string }>;
 	contractsDir: string;
 	worker: {
 		concurrency: number;
@@ -68,6 +80,11 @@ export function parseDuration(text: unknown, key: string): number {
 
 const envOverrides: Record<string, string> = {
 	ANVILKIT_BACKGROUND_WORKER_HEALTH_LISTEN: "health.listen",
+	ANVILKIT_BACKGROUND_WORKER_IDENTITY_MODE: "identity.mode",
+	ANVILKIT_BACKGROUND_WORKER_IDENTITY_CERT_FILE: "identity.cert_file",
+	ANVILKIT_BACKGROUND_WORKER_IDENTITY_KEY_FILE: "identity.key_file",
+	ANVILKIT_BACKGROUND_WORKER_IDENTITY_CA_FILE: "identity.ca_file",
+	ANVILKIT_BACKGROUND_WORKER_OWNER_SERVER_NAME: "owners.server_name",
 	ANVILKIT_BACKGROUND_WORKER_TELEMETRY_OTLP_ENDPOINT: "telemetry.otlp_endpoint",
 	ANVILKIT_BACKGROUND_WORKER_QUEUE_URL: "queue.url",
 	ANVILKIT_BACKGROUND_WORKER_QUEUE_URL_FILE: "queue.url_file",
@@ -142,7 +159,10 @@ function merge(into: Raw, from: Raw): void {
 }
 
 const defaults: Raw = {
+	development: { enabled: false },
+	identity: { mode: "mtls", reload_interval: "5s" },
 	health: { listen: "127.0.0.1:9127" },
+	owners: { knowledge: { server_name: "anvilkit-agent-knowledge" }, mcp: { server_name: "anvilkit-agent-mcp" } },
 	telemetry: { sample_ratio: 1 },
 	queue: { prefix: "anvilkit" },
 	worker: {
@@ -173,6 +193,15 @@ const defaults: Raw = {
 };
 
 const known = new Set([
+	"development.enabled",
+	"identity.mode",
+	"identity.cert_file",
+	"identity.key_file",
+	"identity.ca_file",
+	"identity.reload_interval",
+	"owners.knowledge.server_name",
+	"owners.mcp.server_name",
+	"owners.server_name",
 	"telemetry.otlp_endpoint",
 	"telemetry.sample_ratio",
 	"health.listen",
@@ -321,14 +350,48 @@ function validate(raw: Raw): Config {
 	const lock = attempt(() => duration(raw, "worker.lock_duration", 1000, 3_600_000), 60_000);
 	const stalled = attempt(() => duration(raw, "worker.stalled_interval", 1000, 3_600_000), 30_000);
 	if (stalled >= lock) errors.push("worker.stalled_interval must be shorter than worker.lock_duration");
+	const development = attempt(() => bool(raw, "development.enabled"), false);
+	const identityMode = attempt(() => str(raw, "identity.mode"), "mtls");
+	const identityFiles = {
+		certFile: attempt(() => str(raw, "identity.cert_file"), ""),
+		keyFile: attempt(() => str(raw, "identity.key_file"), ""),
+		caFile: attempt(() => str(raw, "identity.ca_file"), ""),
+	};
+	if (identityMode === "mtls") {
+		if (!identityFiles.certFile || !identityFiles.keyFile || !identityFiles.caFile)
+			errors.push(
+				"identity.cert_file, key_file and ca_file are required under identity.mode mtls (ANVILKIT_BACKGROUND_WORKER_IDENTITY_{CERT,KEY,CA}_FILE)",
+			);
+	} else if (identityMode === "development") {
+		if (!development)
+			errors.push(
+				"identity.mode development (plaintext owner transport) requires development.enabled: true (DEVELOPMENT_ONLY)",
+			);
+	} else errors.push("identity.mode must be mtls or development");
+	// ANVILKIT_BACKGROUND_WORKER_OWNER_SERVER_NAME (owners.server_name) is the
+	// relay container's setting: it names the one owner the relay dials and
+	// overrides both per-owner names.
+	const commonServerName = attempt(() => str(raw, "owners.server_name"), "");
+	const serverName = (o: Owner) => commonServerName || attempt(() => str(raw, `owners.${o}.server_name`), "");
+	for (const o of owners)
+		if (identityMode === "mtls" && !serverName(o)) errors.push(`owners.${o}.server_name is required`);
 	const cfg: Config = {
+		development: { enabled: development },
+		identity: {
+			mode: identityMode as IdentityConfig["mode"],
+			...identityFiles,
+			reloadIntervalMs: attempt(() => duration(raw, "identity.reload_interval", 100, 3_600_000), 5000),
+		},
 		health: { listen: attempt(() => str(raw, "health.listen"), "") },
 		telemetry: { otlpEndpoint, sampleRatio },
 		queue: { url: queueUrl, prefix: attempt(() => str(raw, "queue.prefix"), "anvilkit") },
 		nats: { url: attempt(() => str(raw, "nats.url"), "") },
 		owners: {
-			knowledge: { address: attempt(() => str(raw, "owners.knowledge.address"), "") },
-			mcp: { address: attempt(() => str(raw, "owners.mcp.address"), "") },
+			knowledge: {
+				address: attempt(() => str(raw, "owners.knowledge.address"), ""),
+				serverName: serverName("knowledge"),
+			},
+			mcp: { address: attempt(() => str(raw, "owners.mcp.address"), ""), serverName: serverName("mcp") },
 		},
 		contractsDir: attempt(() => str(raw, "contracts.dir"), ""),
 		worker: {

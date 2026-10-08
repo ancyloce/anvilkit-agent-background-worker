@@ -10,7 +10,14 @@ import { collectDefaultMetrics, Registry } from "prom-client";
 import { type Config, load, type Owner, owners, requireRelay, requireWorker } from "./config.js";
 import { jsonLogger, type Logger } from "./log.js";
 import { Metrics } from "./metrics.js";
-import { connectIndex, connectIngest, connectOwner, connectProjection, type OwnerClient } from "./owner.js";
+import {
+	connectIndex,
+	connectIngest,
+	connectOwner,
+	connectProjection,
+	type OwnerClient,
+	OwnerTransports,
+} from "./owner.js";
 import { connection } from "./queue.js";
 import { Relay } from "./relay/relay.js";
 import { Telemetry } from "./telemetry.js";
@@ -55,18 +62,15 @@ export async function startWorker(cfg: Config, log: Logger = jsonLogger()): Prom
 	metrics.configGeneration.set(1);
 	let ready = false;
 	const health = healthServer(registry, () => ready);
+	const transports = new OwnerTransports(cfg, log);
 	const clients: Partial<Record<Owner, OwnerClient>> = {};
 	for (const o of owners)
-		if (cfg.owners[o].address) clients[o] = connectOwner(o, cfg.owners[o].address, cfg.worker.ownerTimeoutMs);
-	const ingest = cfg.owners.knowledge.address
-		? connectIngest(cfg.owners.knowledge.address, cfg.worker.ownerTimeoutMs)
-		: undefined;
-	const index = cfg.owners.knowledge.address
-		? connectIndex(cfg.owners.knowledge.address, cfg.worker.ownerTimeoutMs)
-		: undefined;
-	const projection = cfg.owners.knowledge.address
-		? connectProjection(cfg.owners.knowledge.address, cfg.worker.ownerTimeoutMs)
-		: undefined;
+		if (cfg.owners[o].address)
+			clients[o] = connectOwner(o, cfg.owners[o].address, cfg.worker.ownerTimeoutMs, transports.for(o));
+	const k = cfg.owners.knowledge.address ? transports.for("knowledge") : undefined;
+	const ingest = k ? connectIngest(cfg.owners.knowledge.address, cfg.worker.ownerTimeoutMs, k) : undefined;
+	const index = k ? connectIndex(cfg.owners.knowledge.address, cfg.worker.ownerTimeoutMs, k) : undefined;
+	const projection = k ? connectProjection(cfg.owners.knowledge.address, cfg.worker.ownerTimeoutMs, k) : undefined;
 	const conn = connection(cfg.queue.url);
 	const telemetry = new Telemetry(cfg.telemetry, "anvilkit-agent-background-worker");
 	const worker = new BackgroundWorker(
@@ -103,6 +107,7 @@ export async function startWorker(cfg: Config, log: Logger = jsonLogger()): Prom
 		ingest?.close();
 		index?.close();
 		projection?.close();
+		transports.close();
 		throw err;
 	}
 	let resolveDone!: () => void;
@@ -122,6 +127,7 @@ export async function startWorker(cfg: Config, log: Logger = jsonLogger()): Prom
 			ingest?.close();
 			index?.close();
 			projection?.close();
+			transports.close();
 			metrics.drainSeconds.set((Date.now() - begin) / 1000);
 			if (forced) metrics.forcedStop.set(1);
 			log.info("background worker stopped", { drainSeconds: (Date.now() - begin) / 1000, forced });
@@ -143,7 +149,8 @@ export async function startRelay(cfg: Config, log: Logger = jsonLogger()): Promi
 	metrics.configGeneration.set(1);
 	let ready = false;
 	const health = healthServer(registry, () => ready);
-	const client = connectOwner(owner, cfg.owners[owner].address, cfg.worker.ownerTimeoutMs);
+	const transports = new OwnerTransports(cfg, log);
+	const client = connectOwner(owner, cfg.owners[owner].address, cfg.worker.ownerTimeoutMs, transports.for(owner));
 	const conn = connection(cfg.queue.url);
 	const relay = new Relay(cfg, owner, client, conn, metrics, log);
 	try {
@@ -155,6 +162,7 @@ export async function startRelay(cfg: Config, log: Logger = jsonLogger()): Promi
 		await closeServer(health);
 		conn.disconnect();
 		client.close();
+		transports.close();
 		throw err;
 	}
 	let resolveDone!: () => void;
@@ -170,6 +178,7 @@ export async function startRelay(cfg: Config, log: Logger = jsonLogger()): Promi
 			const forced = await relay.stop();
 			conn.disconnect();
 			client.close();
+			transports.close();
 			metrics.drainSeconds.set((Date.now() - begin) / 1000);
 			if (forced) metrics.forcedStop.set(1);
 			log.info("relay stopped", { owner, drainSeconds: (Date.now() - begin) / 1000, forced });
