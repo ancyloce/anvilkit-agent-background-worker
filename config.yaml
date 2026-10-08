@@ -2,13 +2,34 @@
 # the secret-free, placement-free bounds of the Worker (`worker` entry) and
 # of the owner queue relay (`relay` entry, run beside each owner). Placements
 # and secrets arrive only through the allowlisted environment:
-# ANVILKIT_BACKGROUND_WORKER_HEALTH_LISTEN, _QUEUE_URL or _QUEUE_URL_FILE (the
+# ANVILKIT_BACKGROUND_WORKER_HEALTH_LISTEN, _IDENTITY_MODE,
+# _IDENTITY_{CERT,KEY,CA}_FILE, _OWNER_SERVER_NAME, _QUEUE_URL or _QUEUE_URL_FILE (the
 # queue Valkey — a separate instance from any cache), _NATS_URL,
 # _KNOWLEDGE_ADDRESS, _MCP_ADDRESS, _CONTRACTS_DIR, _BULL_BOARD_LISTEN,
 # _RELAY_OWNER, _RELAY_DATABASE_URL or _RELAY_DATABASE_URL_FILE (the owner's
 # relay role). Any other ANVILKIT_BACKGROUND_WORKER_* variable, any unknown
 # key here and any secret or placement key here rejects the candidate.
 # DEVELOPMENT_ONLY bounds below are not production capacity (ENV-05).
+# development: the top-level DEVELOPMENT_ONLY guard (P0.1): only
+# identity.mode development (a plaintext owner transport) needs it; the
+# queue Valkey and NATS transports keep their existing settings. The
+# foundation runs the owner clients under mTLS, so the guard stays off.
+development:
+  enabled: false
+# identity: the workload identity the owner clients present (P0.1). mtls
+# presents the watched certificate and verifies each owner by its
+# server_name (a DNS SAN); the files are placements
+# (ANVILKIT_BACKGROUND_WORKER_IDENTITY_{CERT,KEY,CA}_FILE; the relay
+# container of an owner Pod sets them with _IDENTITY_MODE and
+# _OWNER_SERVER_NAME). development is plaintext (requires development.enabled).
+identity:
+  mode: mtls
+  reload_interval: 5s
+owners:
+  knowledge:
+    server_name: anvilkit-agent-knowledge
+  mcp:
+    server_name: anvilkit-agent-mcp
 health:
   listen: 127.0.0.1:9127
 queue:
