@@ -1,7 +1,4 @@
 {{- include "anvilkit-agent-background-worker.require" . -}}
-{{- $cfg := deepCopy .Values.config -}}
-{{- $_ := set $cfg.bull_board "enabled" .Values.bullBoard.enabled -}}
-{{- $_ = set $cfg.bull_board "read_only" .Values.bullBoard.readOnly -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -10,4 +7,4 @@ metadata:
     {{- include "anvilkit-agent-background-worker.labels" . | nindent 4 }}
 data:
   config.yaml: |
-    {{- toYaml $cfg | nindent 4 }}
+    {{- include "anvilkit-agent-background-worker.config" . | nindent 4 }}

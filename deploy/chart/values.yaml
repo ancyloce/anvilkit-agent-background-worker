@@ -33,6 +33,32 @@ listen:
 health:
   port: 9127
 
+# The workload identity the owner clients present (P0.1): mtls (the default)
+# presents the certificate of a cert-manager Certificate this chart renders
+# (certificate.create) from issuerRef, or of an existing Secret (secretName,
+# keys tls.crt, tls.key, ca.crt), mounted at /etc/anvilkit/identity and
+# reloaded as a whole; the owners are verified by their server names
+# (owners.<owner>.serverName, DNS SANs of their certificates). development is
+# the plaintext transport of the development foundation and renders only
+# with development.enabled: true.
+identity:
+  mode: mtls
+  trustDomain: ""
+  secretName: ""
+  certificate:
+    create: true
+    issuerRef:
+      name: ""
+      kind: ClusterIssuer
+      group: cert-manager.io
+    duration: 2160h
+    renewBefore: 720h
+
+# The top-level DEVELOPMENT_ONLY guard: identity.mode development renders
+# only while this is true; it downgrades nothing by itself.
+development:
+  enabled: false
+
 # The queue Valkey (ANVILKIT_BACKGROUND_WORKER_QUEUE_URL_FILE): a Secret
 # mounted as a file; a separate instance from any cache. Required.
 queue:
@@ -44,8 +70,10 @@ queue:
 owners:
   knowledge:
     address: ""
+    serverName: anvilkit-agent-knowledge
   mcp:
     address: ""
+    serverName: anvilkit-agent-mcp
 
 # Bull Board (C05): off by default; read-only when on.
 bullBoard:

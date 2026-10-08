@@ -1,0 +1,31 @@
+{{- include "anvilkit-agent-background-worker.require" . -}}
+{{- if and (eq .Values.identity.mode "mtls") .Values.identity.certificate.create }}
+# The workload certificate (P0.1): CN and DNS SANs name the workload; the
+# URI SAN is the identity the owners authorize
+# (spiffe://<trustDomain>/ns/<namespace>/sa/<service-account>). cert-manager
+# rotates it; the process reloads the files as a whole.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "anvilkit-agent-background-worker.fullname" . }}-identity
+  labels:
+    {{- include "anvilkit-agent-background-worker.labels" . | nindent 4 }}
+spec:
+  commonName: {{ include "anvilkit-agent-background-worker.name" . }}
+  secretName: {{ include "anvilkit-agent-background-worker.identitySecret" . }}
+  duration: {{ .Values.identity.certificate.duration }}
+  renewBefore: {{ .Values.identity.certificate.renewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages: [digital signature, key encipherment, server auth, client auth]
+  dnsNames:
+    - {{ include "anvilkit-agent-background-worker.fullname" . }}
+    - {{ include "anvilkit-agent-background-worker.fullname" . }}.{{ .Release.Namespace }}.svc
+    - {{ include "anvilkit-agent-background-worker.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+  uris:
+    - spiffe://{{ default "anvilkit.local" .Values.identity.trustDomain }}/ns/{{ .Release.Namespace }}/sa/{{ include "anvilkit-agent-background-worker.serviceAccountName" . }}
+  issuerRef:
+    {{- toYaml .Values.identity.certificate.issuerRef | nindent 4 }}
+{{- end }}

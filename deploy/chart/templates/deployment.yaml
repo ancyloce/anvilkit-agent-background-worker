@@ -1,7 +1,5 @@
 {{- include "anvilkit-agent-background-worker.require" . -}}
-{{- $cfg := deepCopy .Values.config -}}
-{{- $_ := set $cfg.bull_board "enabled" .Values.bullBoard.enabled -}}
-{{- $_ = set $cfg.bull_board "read_only" .Values.bullBoard.readOnly -}}
+{{- $cfg := include "anvilkit-agent-background-worker.config" . -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -24,7 +22,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-        checksum/config: {{ toYaml $cfg | sha256sum }}
+        checksum/config: {{ $cfg | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -105,6 +103,11 @@ spec:
             - name: queue
               mountPath: /var/run/secrets/anvilkit/queue
               readOnly: true
+            {{- if eq .Values.identity.mode "mtls" }}
+            - name: identity
+              mountPath: /etc/anvilkit/identity
+              readOnly: true
+            {{- end }}
       volumes:
         - name: config
           configMap:
@@ -112,6 +115,12 @@ spec:
         - name: queue
           secret:
             secretName: {{ .Values.queue.secret.name }}
+        {{- if eq .Values.identity.mode "mtls" }}
+        - name: identity
+          secret:
+            secretName: {{ include "anvilkit-agent-background-worker.identitySecret" . }}
+            defaultMode: 0440
+        {{- end }}
       {{- with .Values.topologySpreadConstraints }}
       topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
