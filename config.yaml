@@ -4,16 +4,22 @@
 # and secrets arrive only through the allowlisted environment:
 # ANVILKIT_BACKGROUND_WORKER_HEALTH_LISTEN, _IDENTITY_MODE,
 # _IDENTITY_{CERT,KEY,CA}_FILE, _OWNER_SERVER_NAME, _QUEUE_URL or _QUEUE_URL_FILE (the
-# queue Valkey — a separate instance from any cache), _NATS_URL,
+# queue Valkey — a separate instance from any cache), _QUEUE_TLS_CA_FILE,
+# _NATS_URL, _NATS_TLS_{MODE,CA_FILE,CERT_FILE,KEY_FILE,SERVER_NAME},
+# _NATS_CREDS_FILE (the relay's NATS credential),
 # _KNOWLEDGE_ADDRESS, _MCP_ADDRESS, _CONTRACTS_DIR, _BULL_BOARD_LISTEN,
 # _RELAY_OWNER, _RELAY_DATABASE_URL or _RELAY_DATABASE_URL_FILE (the owner's
 # relay role). Any other ANVILKIT_BACKGROUND_WORKER_* variable, any unknown
 # key here and any secret or placement key here rejects the candidate.
 # DEVELOPMENT_ONLY bounds below are not production capacity (ENV-05).
-# development: the top-level DEVELOPMENT_ONLY guard (P0.1): only
-# identity.mode development (a plaintext owner transport) needs it; the
-# queue Valkey and NATS transports keep their existing settings. The
-# foundation runs the owner clients under mTLS, so the guard stays off.
+# development: the top-level DEVELOPMENT_ONLY guard (P0.1, P0.6): it admits
+# identity.mode development (a plaintext owner transport), nats.tls.mode
+# development (plaintext NATS without a credential), a redis:// queue URL
+# without an ACL user and a relay database URL without sslmode=verify-full;
+# it downgrades nothing by itself. This file is also the image's default
+# configuration (the owner charts' relay containers read it), so the guard
+# stays off here; a development run supplies its own file with the guard on
+# and nats.tls.mode development.
 development:
   enabled: false
 # identity: the workload identity the owner clients present (P0.1). mtls
@@ -35,7 +41,23 @@ health:
 queue:
   # BullMQ key prefix: anvilkit:<owner>:<queue>:... (application namespace
   # anvilkit:<domain>:, the library's internal keys stay its own).
+  # Outside development the URL is rediss://<user>:<password>@host:port (TLS
+  # and the queue's ACL user, P0.6); tls.ca_file (or
+  # ANVILKIT_BACKGROUND_WORKER_QUEUE_TLS_CA_FILE; Node's default roots with
+  # NODE_EXTRA_CA_CERTS when empty) and tls.server_name (the URL host when
+  # empty) verify the server of a rediss:// URL on every queue connection.
   prefix: anvilkit
+# nats: the relay's NATS transport (P0.6). tls requires and verifies TLS
+# against tls.ca_file (Node's default roots with NODE_EXTRA_CA_CERTS when
+# empty) under tls.server_name (the URL host when empty); mtls also presents
+# tls.cert_file and tls.key_file; development is plaintext (requires
+# development.enabled). The credential is environment-only
+# (ANVILKIT_BACKGROUND_WORKER_NATS_CREDS_FILE: a NATS user .creds file or a
+# bare NKey user seed, read at start) and required outside development.
+# Validated while NATS is placed (the relay entry).
+nats:
+  tls:
+    mode: tls
 worker:
   concurrency: 4
   # The lease asked of the owner and the heartbeat that keeps it; losing the
