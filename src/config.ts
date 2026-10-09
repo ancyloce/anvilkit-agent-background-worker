@@ -2,9 +2,15 @@
 // defaults < the reviewed, secret-free config.yaml < the allowlisted
 // ANVILKIT_BACKGROUND_WORKER_* environment. Unknown keys and variables,
 // missing values, out-of-range values and contradictions reject the
-// candidate before anything starts. The queue Valkey URL and the relay's
-// database URL are secrets: environment or mounted secret file only.
+// candidate before anything starts. The queue Valkey URL, the relay's
+// database URL and the NATS credential are secrets: environment or mounted
+// secret file only. Outside development (P0.6) the data plane verifies its
+// servers and authenticates: the queue URL is rediss:// with an ACL user,
+// NATS runs tls or mtls with a credential, the relay's PostgreSQL URL
+// carries sslmode=verify-full.
 import { readFileSync } from "node:fs";
+import { isIP } from "node:net";
+import { credsAuthenticator, nkeyAuthenticator } from "@nats-io/nats-core";
 import { parse as parseYaml } from "yaml";
 
 export const envPrefix = "ANVILKIT_BACKGROUND_WORKER_";
@@ -29,15 +35,36 @@ export interface IdentityConfig {
 	reloadIntervalMs: number;
 }
 
+/**
+ * The relay's NATS transport (P0.6): development is plaintext (only with
+ * development.enabled); tls verifies the server against caFile (Node's
+ * default roots with NODE_EXTRA_CA_CERTS when empty) under serverName (the
+ * URL host when empty); mtls also presents certFile/keyFile.
+ */
+export interface NatsTls {
+	mode: "development" | "tls" | "mtls";
+	caFile: string;
+	certFile: string;
+	keyFile: string;
+	serverName: string;
+}
+
+/** The NATS credential read from nats.creds_file at load: a user .creds file (JWT and seed) or a bare NKey user seed. */
+export interface NatsCredential {
+	kind: "creds" | "nkey";
+	bytes: Uint8Array;
+}
+
 export interface Config {
-	/** The top-level DEVELOPMENT_ONLY guard: a plaintext owner transport needs identity.mode development and this; it downgrades nothing by itself. File-only. */
+	/** The top-level DEVELOPMENT_ONLY guard: a plaintext owner transport needs identity.mode development and this, as do plaintext NATS (nats.tls.mode development), a redis:// queue without an ACL user and a relay database URL without sslmode=verify-full; it downgrades nothing by itself. File-only. */
 	development: { enabled: boolean };
 	identity: IdentityConfig;
 	health: { listen: string };
 	/** Spans over OTLP/HTTP to the collector when placed (none otherwise), sampled at sampleRatio. */
 	telemetry: { otlpEndpoint: string; sampleRatio: number };
-	queue: { url: string; prefix: string };
-	nats: { url: string };
+	/** tls applies to a rediss:// url: caFile (Node's default roots with NODE_EXTRA_CA_CERTS when empty) and serverName (the URL host when empty). */
+	queue: { url: string; prefix: string; tls: { caFile: string; serverName: string } };
+	nats: { url: string; tls: NatsTls; credsFile: string; credential?: NatsCredential };
 	owners: Record<Owner, { address: string; serverName: string }>;
 	contractsDir: string;
 	worker: {
@@ -88,7 +115,14 @@ const envOverrides: Record<string, string> = {
 	ANVILKIT_BACKGROUND_WORKER_TELEMETRY_OTLP_ENDPOINT: "telemetry.otlp_endpoint",
 	ANVILKIT_BACKGROUND_WORKER_QUEUE_URL: "queue.url",
 	ANVILKIT_BACKGROUND_WORKER_QUEUE_URL_FILE: "queue.url_file",
+	ANVILKIT_BACKGROUND_WORKER_QUEUE_TLS_CA_FILE: "queue.tls.ca_file",
 	ANVILKIT_BACKGROUND_WORKER_NATS_URL: "nats.url",
+	ANVILKIT_BACKGROUND_WORKER_NATS_TLS_MODE: "nats.tls.mode",
+	ANVILKIT_BACKGROUND_WORKER_NATS_TLS_CA_FILE: "nats.tls.ca_file",
+	ANVILKIT_BACKGROUND_WORKER_NATS_TLS_CERT_FILE: "nats.tls.cert_file",
+	ANVILKIT_BACKGROUND_WORKER_NATS_TLS_KEY_FILE: "nats.tls.key_file",
+	ANVILKIT_BACKGROUND_WORKER_NATS_TLS_SERVER_NAME: "nats.tls.server_name",
+	ANVILKIT_BACKGROUND_WORKER_NATS_CREDS_FILE: "nats.creds_file",
 	ANVILKIT_BACKGROUND_WORKER_KNOWLEDGE_ADDRESS: "owners.knowledge.address",
 	ANVILKIT_BACKGROUND_WORKER_MCP_ADDRESS: "owners.mcp.address",
 	ANVILKIT_BACKGROUND_WORKER_CONTRACTS_DIR: "contracts.dir",
@@ -103,6 +137,7 @@ const environmentOnly = [
 	"queue.url",
 	"queue.url_file",
 	"nats.url",
+	"nats.creds_file",
 	"owners.knowledge.address",
 	"owners.mcp.address",
 	"contracts.dir",
@@ -165,6 +200,7 @@ const defaults: Raw = {
 	owners: { knowledge: { server_name: "anvilkit-agent-knowledge" }, mcp: { server_name: "anvilkit-agent-mcp" } },
 	telemetry: { sample_ratio: 1 },
 	queue: { prefix: "anvilkit" },
+	nats: { tls: { mode: "tls" } },
 	worker: {
 		concurrency: 4,
 		lease_seconds: 60,
@@ -208,7 +244,15 @@ const known = new Set([
 	"queue.url",
 	"queue.url_file",
 	"queue.prefix",
+	"queue.tls.ca_file",
+	"queue.tls.server_name",
 	"nats.url",
+	"nats.tls.mode",
+	"nats.tls.ca_file",
+	"nats.tls.cert_file",
+	"nats.tls.key_file",
+	"nats.tls.server_name",
+	"nats.creds_file",
 	"owners.knowledge.address",
 	"owners.mcp.address",
 	"contracts.dir",
@@ -322,6 +366,68 @@ function secretFrom(raw: Raw, key: string, fileKey: string, errors: string[]): s
 
 const listenPattern = /^[^:\s]+:\d{1,5}$/;
 
+/**
+ * P0.6: outside development a PostgreSQL URL must verify the server, i.e.
+ * carry exactly one sslmode=verify-full (node-postgres takes the last of
+ * repeated parameters; the CA is sslrootcert's file, else the default roots
+ * with NODE_EXTRA_CA_CERTS) and name the server by a DNS name: node-postgres
+ * passes no servername for an IP host, so Node checks the certificate
+ * against "localhost" instead of the IP. Returns the refusal, never echoing
+ * the URL.
+ */
+export function postgresTlsError(key: string, url: string): string | undefined {
+	let parsed: URL;
+	try {
+		// node-postgres (pg-connection-string) encodes these before parsing too.
+		const text = / |%[^a-f0-9]|%[a-f0-9][^a-f0-9]/i.test(url) ? encodeURI(url).replace(/%25(\d\d)/g, "%$1") : url;
+		parsed = new URL(text);
+	} catch {
+		return `${key}: not a parseable URL`;
+	}
+	const modes = parsed.searchParams.getAll("sslmode");
+	if (modes.length !== 1 || modes[0] !== "verify-full")
+		return `${key}: sslmode must be verify-full outside development (got ${modes.length === 0 ? "none" : JSON.stringify(modes.join(","))})`;
+	// A host parameter replaces the authority's host in node-postgres.
+	const host = (parsed.searchParams.getAll("host").pop() ?? parsed.hostname).replace(/^\[|\]$/g, "");
+	if (!host || isIP(host) !== 0)
+		return `${key}: the host must be a DNS name outside development (node-postgres verifies an IP host against "localhost", not the IP)`;
+	return undefined;
+}
+
+/**
+ * Reads nats.creds_file: a NATS user credentials file (the "-----BEGIN NATS
+ * USER JWT-----" block and its seed) or a bare NKey user seed ("SU…"). The
+ * content is proven usable (it signs a probe nonce through the library's own
+ * authenticator) and never echoed.
+ */
+function natsCredential(file: string, errors: string[]): NatsCredential | undefined {
+	let bytes: Uint8Array;
+	try {
+		bytes = readFileSync(file);
+	} catch {
+		errors.push("nats.creds_file: cannot read the file");
+		return undefined;
+	}
+	const text = Buffer.from(bytes).toString("utf8");
+	const seed = text.trim();
+	const credential: NatsCredential | undefined = text.includes("-----BEGIN NATS USER JWT-----")
+		? { kind: "creds", bytes }
+		: /^SU[A-Z2-7]+$/.test(seed)
+			? { kind: "nkey", bytes: new TextEncoder().encode(seed) }
+			: undefined;
+	try {
+		if (!credential) throw new Error("unknown form");
+		const auth =
+			credential.kind === "creds" ? credsAuthenticator(credential.bytes) : nkeyAuthenticator(credential.bytes);
+		const signed = auth("probe") as { nkey?: string; sig?: string };
+		if (!signed.nkey || !signed.sig) throw new Error("no signature");
+	} catch {
+		errors.push("nats.creds_file: neither a NATS user credentials file nor an NKey user seed");
+		return undefined;
+	}
+	return credential;
+}
+
 function validate(raw: Raw): Config {
 	const errors: string[] = [];
 	const attempt = <T>(fn: () => T, fallback: T): T => {
@@ -337,20 +443,78 @@ function validate(raw: Raw): Config {
 		errors.push("telemetry.otlp_endpoint must be an http(s) URL of the collector");
 	const sampleRatio = Number(get(raw, "telemetry.sample_ratio"));
 	if (!(sampleRatio >= 0 && sampleRatio <= 1)) errors.push("telemetry.sample_ratio must be within [0, 1]");
+	const development = attempt(() => bool(raw, "development.enabled"), false);
 	const queueUrl = secretFrom(raw, "queue.url", "queue.url_file", errors);
 	if (queueUrl && !/^rediss?:\/\//.test(queueUrl))
 		errors.push("queue.url must be a redis:// or rediss:// URL (the queue Valkey, never the cache instance)");
+	// P0.6: TLS and an ACL user outside development (the URL is never echoed).
+	let queueUser = "";
+	let queuePassword = "";
+	try {
+		const u = new URL(queueUrl);
+		queueUser = u.username;
+		queuePassword = u.password;
+	} catch {
+		// the scheme check above reports a malformed URL
+	}
+	if (queueUrl && !development && (!queueUrl.startsWith("rediss://") || !queueUser || !queuePassword))
+		errors.push(
+			"queue.url must be rediss://<user>:<password>@host:port outside development (TLS and the queue's ACL user; redis:// or no user requires development.enabled: true, DEVELOPMENT_ONLY)",
+		);
+	const queueTls = {
+		caFile: attempt(() => str(raw, "queue.tls.ca_file"), ""),
+		serverName: attempt(() => str(raw, "queue.tls.server_name"), ""),
+	};
+	if ((queueTls.caFile || queueTls.serverName) && queueUrl && !queueUrl.startsWith("rediss://"))
+		errors.push("queue.tls.ca_file and queue.tls.server_name apply only to a rediss:// queue.url");
+	if (queueTls.caFile)
+		try {
+			readFileSync(queueTls.caFile);
+		} catch (err) {
+			errors.push(`queue.tls.ca_file: ${err instanceof Error ? err.message : String(err)}`);
+		}
 	const relayOwner = attempt(() => str(raw, "relay.owner"), "");
 	if (relayOwner && !(owners as string[]).includes(relayOwner)) errors.push("relay.owner must be knowledge or mcp");
 	const relayDb = secretFrom(raw, "relay.database_url", "relay.database_url_file", errors);
 	if (relayDb && !/^postgres(ql)?:\/\//.test(relayDb)) errors.push("relay.database_url must be a postgres URL");
+	const relayDbTls = relayDb && !development ? postgresTlsError("relay.database_url", relayDb) : undefined;
+	if (relayDbTls) errors.push(relayDbTls);
+	// The relay's NATS transport and credential, validated while NATS is placed.
+	const natsUrl = attempt(() => str(raw, "nats.url"), "");
+	const natsTls: NatsTls = {
+		mode: attempt(() => str(raw, "nats.tls.mode"), "tls") as NatsTls["mode"],
+		caFile: attempt(() => str(raw, "nats.tls.ca_file"), ""),
+		certFile: attempt(() => str(raw, "nats.tls.cert_file"), ""),
+		keyFile: attempt(() => str(raw, "nats.tls.key_file"), ""),
+		serverName: attempt(() => str(raw, "nats.tls.server_name"), ""),
+	};
+	const credsFile = attempt(() => str(raw, "nats.creds_file"), "");
+	let natsCred: NatsCredential | undefined;
+	if (natsUrl) {
+		if (natsTls.mode === "development") {
+			if (!development)
+				errors.push("nats.tls.mode development (plaintext) requires development.enabled: true (DEVELOPMENT_ONLY)");
+			if (natsTls.caFile || natsTls.certFile || natsTls.keyFile || natsTls.serverName)
+				errors.push("nats.tls.ca_file, cert_file, key_file and server_name apply only under nats.tls.mode tls or mtls");
+		} else if (natsTls.mode === "tls") {
+			if (natsTls.certFile || natsTls.keyFile)
+				errors.push("nats.tls.cert_file and key_file apply only under nats.tls.mode mtls");
+		} else if (natsTls.mode === "mtls") {
+			if (!natsTls.caFile || !natsTls.certFile || !natsTls.keyFile)
+				errors.push(
+					"nats.tls.ca_file, cert_file and key_file are required under nats.tls.mode mtls (ANVILKIT_BACKGROUND_WORKER_NATS_TLS_{CA,CERT,KEY}_FILE)",
+				);
+		} else errors.push("nats.tls.mode must be development, tls or mtls");
+		if (!credsFile && !development)
+			errors.push("nats.creds_file is required outside development (ANVILKIT_BACKGROUND_WORKER_NATS_CREDS_FILE)");
+		if (credsFile) natsCred = natsCredential(credsFile, errors);
+	}
 	const lease = attempt(() => int(raw, "worker.lease_seconds", 1, 3600), 60);
 	const heartbeat = attempt(() => duration(raw, "worker.heartbeat_interval", 100, 3_600_000), 15_000);
 	if (heartbeat >= lease * 1000) errors.push("worker.heartbeat_interval must be shorter than worker.lease_seconds");
 	const lock = attempt(() => duration(raw, "worker.lock_duration", 1000, 3_600_000), 60_000);
 	const stalled = attempt(() => duration(raw, "worker.stalled_interval", 1000, 3_600_000), 30_000);
 	if (stalled >= lock) errors.push("worker.stalled_interval must be shorter than worker.lock_duration");
-	const development = attempt(() => bool(raw, "development.enabled"), false);
 	const identityMode = attempt(() => str(raw, "identity.mode"), "mtls");
 	const identityFiles = {
 		certFile: attempt(() => str(raw, "identity.cert_file"), ""),
@@ -384,8 +548,8 @@ function validate(raw: Raw): Config {
 		},
 		health: { listen: attempt(() => str(raw, "health.listen"), "") },
 		telemetry: { otlpEndpoint, sampleRatio },
-		queue: { url: queueUrl, prefix: attempt(() => str(raw, "queue.prefix"), "anvilkit") },
-		nats: { url: attempt(() => str(raw, "nats.url"), "") },
+		queue: { url: queueUrl, prefix: attempt(() => str(raw, "queue.prefix"), "anvilkit"), tls: queueTls },
+		nats: { url: natsUrl, tls: natsTls, credsFile, ...(natsCred ? { credential: natsCred } : {}) },
 		owners: {
 			knowledge: {
 				address: attempt(() => str(raw, "owners.knowledge.address"), ""),

@@ -71,7 +71,7 @@ export async function startWorker(cfg: Config, log: Logger = jsonLogger()): Prom
 	const ingest = k ? connectIngest(cfg.owners.knowledge.address, cfg.worker.ownerTimeoutMs, k) : undefined;
 	const index = k ? connectIndex(cfg.owners.knowledge.address, cfg.worker.ownerTimeoutMs, k) : undefined;
 	const projection = k ? connectProjection(cfg.owners.knowledge.address, cfg.worker.ownerTimeoutMs, k) : undefined;
-	const conn = connection(cfg.queue.url);
+	const conn = connection(cfg.queue);
 	const telemetry = new Telemetry(cfg.telemetry, "anvilkit-agent-background-worker");
 	const worker = new BackgroundWorker(
 		cfg,
@@ -151,7 +151,7 @@ export async function startRelay(cfg: Config, log: Logger = jsonLogger()): Promi
 	const health = healthServer(registry, () => ready);
 	const transports = new OwnerTransports(cfg, log);
 	const client = connectOwner(owner, cfg.owners[owner].address, cfg.worker.ownerTimeoutMs, transports.for(owner));
-	const conn = connection(cfg.queue.url);
+	const conn = connection(cfg.queue);
 	const relay = new Relay(cfg, owner, client, conn, metrics, log);
 	try {
 		await listen(health, cfg.health.listen);

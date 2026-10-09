@@ -3,9 +3,14 @@
 // deduplicates scheduling (one job per task generation, encoded within
 // BullMQ's custom-id rules: never an integer, never a bare colon) and the
 // payload, which carries identity, generation, digest and trace references
-// only — never an input body, a result or a credential.
+// only — never an input body, a result or a credential. Every queue
+// connection of the package (Worker, Bull Board, relay; BullMQ duplicates
+// them with the same options) is built by connection() from the queue
+// configuration, so TLS and the ACL user of P0.6 apply to all of them.
+import { readFileSync } from "node:fs";
+import type { ConnectionOptions } from "node:tls";
 import { Queue, type QueueOptions } from "bullmq";
-import { Redis } from "ioredis";
+import { Redis, type RedisOptions } from "ioredis";
 import type { Config, Owner } from "./config.js";
 
 export interface JobPayload {
@@ -47,9 +52,15 @@ export function prefixOf(cfg: Config, owner: Owner): string {
 	return `${cfg.queue.prefix}:${owner}`;
 }
 
-export function connection(url: string): Redis {
-	// BullMQ requires maxRetriesPerRequest: null on its connections.
-	return new Redis(url, {
+/**
+ * The ioredis options of every queue connection. A rediss:// URL verifies
+ * the server against queue.tls.ca_file (Node's default roots with
+ * NODE_EXTRA_CA_CERTS when empty) under queue.tls.server_name (the URL host
+ * when empty); the ACL user and password come from the URL.
+ */
+export function connectionOptions(queue: Config["queue"]): RedisOptions {
+	const options: RedisOptions = {
+		// BullMQ requires maxRetriesPerRequest: null on its connections.
 		maxRetriesPerRequest: null,
 		enableReadyCheck: false,
 		lazyConnect: false,
@@ -57,7 +68,18 @@ export function connection(url: string): Redis {
 		// BullMQ's duplicated blocking clients. Do not add ioredis's default
 		// socket half-close grace when the server cannot answer.
 		disconnectTimeout: 0,
-	});
+	};
+	if (queue.url.startsWith("rediss://")) {
+		const tls: ConnectionOptions = { rejectUnauthorized: true };
+		if (queue.tls.caFile) tls.ca = readFileSync(queue.tls.caFile);
+		if (queue.tls.serverName) tls.servername = queue.tls.serverName;
+		options.tls = tls;
+	}
+	return options;
+}
+
+export function connection(queue: Config["queue"]): Redis {
+	return new Redis(queue.url, connectionOptions(queue));
 }
 
 export function openQueue(cfg: Config, owner: Owner, name: string, conn: Redis): Queue<JobPayload> {
