@@ -41,7 +41,14 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{- define "anvilkit-agent-background-worker.require" -}}
-{{- if not .Values.queue.secret.name }}
+{{- $kube := eq .Values.secrets.provider "kubernetes" -}}
+{{- if not (has .Values.secrets.provider (list "kubernetes" "csi")) }}
+{{- fail "secrets.provider must be kubernetes or csi" }}
+{{- end }}
+{{- if and (not $kube) (or (not .Values.secrets.csi.address) (not .Values.secrets.csi.path)) }}
+{{- fail "secrets.csi.address and secrets.csi.path are required under secrets.provider csi (the OpenBao address and the service's KV v2 data path)" }}
+{{- end }}
+{{- if and $kube (not .Values.queue.secret.name) }}
 {{- fail "queue.secret.name is required: an existing Secret holding the queue Valkey URL, mounted as the file ANVILKIT_BACKGROUND_WORKER_QUEUE_URL_FILE names" }}
 {{- end }}
 {{- if and (not .Values.owners.knowledge.address) (not .Values.owners.mcp.address) }}

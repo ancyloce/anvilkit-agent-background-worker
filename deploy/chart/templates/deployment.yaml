@@ -45,6 +45,10 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           env:
+            {{- if .Values.trust.configMap }}
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/anvilkit/trust/ca.crt
+            {{- end }}
             - name: ANVILKIT_BACKGROUND_WORKER_CONFIG
               value: /etc/anvilkit/anvilkit-agent-background-worker/config.yaml
             - name: ANVILKIT_BACKGROUND_WORKER_HEALTH_LISTEN
@@ -53,8 +57,17 @@ spec:
             - name: ANVILKIT_BACKGROUND_WORKER_TELEMETRY_OTLP_ENDPOINT
               value: {{ .Values.telemetry.otlpEndpoint | quote }}
             {{- end }}
+            {{- if eq .Values.secrets.provider "csi" }}
+            - name: ANVILKIT_BACKGROUND_WORKER_QUEUE_URL_FILE
+              value: /var/run/secrets/anvilkit/csi/queue-url
+            {{- else }}
             - name: ANVILKIT_BACKGROUND_WORKER_QUEUE_URL_FILE
               value: /var/run/secrets/anvilkit/queue/{{ .Values.queue.secret.key }}
+            {{- end }}
+            {{- with .Values.queue.tls.caFile }}
+            - name: ANVILKIT_BACKGROUND_WORKER_QUEUE_TLS_CA_FILE
+              value: {{ . | quote }}
+            {{- end }}
             {{- if .Values.owners.knowledge.address }}
             - name: ANVILKIT_BACKGROUND_WORKER_KNOWLEDGE_ADDRESS
               value: {{ .Values.owners.knowledge.address | quote }}
@@ -100,8 +113,13 @@ spec:
             - name: config
               mountPath: /etc/anvilkit/anvilkit-agent-background-worker
               readOnly: true
+            {{- if .Values.trust.configMap }}
+            - name: trust
+              mountPath: /etc/anvilkit/trust
+              readOnly: true
+            {{- end }}
             - name: queue
-              mountPath: /var/run/secrets/anvilkit/queue
+              mountPath: {{ if eq .Values.secrets.provider "csi" }}/var/run/secrets/anvilkit/csi{{ else }}/var/run/secrets/anvilkit/queue{{ end }}
               readOnly: true
             {{- if eq .Values.identity.mode "mtls" }}
             - name: identity
@@ -112,9 +130,24 @@ spec:
         - name: config
           configMap:
             name: {{ include "anvilkit-agent-background-worker.fullname" . }}
+        {{- if .Values.trust.configMap }}
+        - name: trust
+          configMap:
+            name: {{ .Values.trust.configMap }}
+            items: [{key: ca.crt, path: ca.crt}]
+        {{- end }}
+        {{- if eq .Values.secrets.provider "csi" }}
+        - name: queue
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ include "anvilkit-agent-background-worker.fullname" . }}
+        {{- else }}
         - name: queue
           secret:
             secretName: {{ .Values.queue.secret.name }}
+        {{- end }}
         {{- if eq .Values.identity.mode "mtls" }}
         - name: identity
           secret:

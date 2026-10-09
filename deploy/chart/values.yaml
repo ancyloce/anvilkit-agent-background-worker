@@ -65,6 +65,34 @@ queue:
   secret:
     name: ""
     key: url
+  # The queue Valkey's CA inside the Pod for a rediss:// URL
+  # (ANVILKIT_BACKGROUND_WORKER_QUEUE_TLS_CA_FILE), e.g. the cluster CA of the
+  # workload identity /etc/anvilkit/identity/ca.crt; empty uses the image's
+  # roots.
+  tls:
+    caFile: ""
+
+# Credential delivery (P0.6). kubernetes mounts queue.secret (the
+# development foundation's path); csi mounts the worker's queue URL (its own
+# Valkey ACL user) from OpenBao through the Secrets Store CSI driver
+# (provider openbao, Kubernetes auth with the Pod's ServiceAccount token of
+# audience csi.audience; no Kubernetes Secret is synced) at
+# /var/run/secrets/anvilkit/csi: the KV v2 path holds queue-url.
+secrets:
+  provider: kubernetes
+  csi:
+    address: ""
+    caCertPath: ""
+    audience: openbao
+    role: ""
+    path: ""
+
+# P0.6: the data plane's CA bundle: a ConfigMap (key ca.crt) in this
+# namespace, e.g. the anvilkit-trust map deploy/qualification/bootstrap.py
+# maintains, mounted at /etc/anvilkit/trust and added to the process roots
+# (NODE_EXTRA_CA_CERTS) for the data stores' TLS. Empty: the image's roots only.
+trust:
+  configMap: ""
 
 # The owners' BackgroundTaskService placements; at least one is required.
 owners:
