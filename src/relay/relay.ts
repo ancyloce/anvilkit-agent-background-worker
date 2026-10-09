@@ -13,8 +13,8 @@
 // role (SELECT on background_requests, INSERT/SELECT on inbox) and
 // touches no domain fact.
 import { AckPolicy, type ConsumerMessages, DeliverPolicy, jetstream, jetstreamManager } from "@nats-io/jetstream";
-import { type NatsConnection, nanos } from "@nats-io/nats-core";
-import { connect } from "@nats-io/transport-node";
+import { credsAuthenticator, type NatsConnection, nanos, nkeyAuthenticator } from "@nats-io/nats-core";
+import { connect, type NodeConnectionOptions } from "@nats-io/transport-node";
 import type { Queue } from "bullmq";
 import type { Redis } from "ioredis";
 import pg from "pg";
@@ -26,6 +26,34 @@ import type { OwnerClient } from "../owner.js";
 import { type JobPayload, jobIdOf, jobOptions, openQueue } from "../queue.js";
 
 export const streamOf: Record<Owner, string> = { knowledge: "ANVILKIT_KNOWLEDGE", mcp: "ANVILKIT_MCP" };
+
+/**
+ * The relay's NATS connection options (P0.6): under nats.tls.mode tls or
+ * mtls a TLS connection is required and verified (caFile, else Node's
+ * default roots with NODE_EXTRA_CA_CERTS; serverName, else the URL host;
+ * the files are read again on every reconnect), mtls presents the client
+ * certificate, and the credential read at load authenticates (a user .creds
+ * through credsAuthenticator, a bare NKey seed through nkeyAuthenticator).
+ * Development leaves the transport plaintext (DEVELOPMENT_ONLY).
+ */
+export function natsOptions(cfg: Config, name: string): NodeConnectionOptions {
+	const options: NodeConnectionOptions = { servers: cfg.nats.url, name };
+	const t = cfg.nats.tls;
+	if (t.mode !== "development") {
+		// The transport copies every key into tls.connect: servername included.
+		const tls: NonNullable<NodeConnectionOptions["tls"]> & { servername?: string } = { rejectUnauthorized: true };
+		if (t.caFile) tls.caFile = t.caFile;
+		if (t.mode === "mtls") {
+			tls.certFile = t.certFile;
+			tls.keyFile = t.keyFile;
+		}
+		if (t.serverName) tls.servername = t.serverName;
+		options.tls = tls;
+	}
+	const c = cfg.nats.credential;
+	if (c) options.authenticator = c.kind === "creds" ? credsAuthenticator(c.bytes) : nkeyAuthenticator(c.bytes);
+	return options;
+}
 export const consumerOf: Record<Owner, string> = {
 	knowledge: "anvilkit-agent-knowledge-background-relay",
 	mcp: "anvilkit-agent-mcp-background-relay",
@@ -99,7 +127,7 @@ export class Relay {
 			c.release();
 		}
 		await this.conn.ping();
-		this.nc = await connect({ servers: this.cfg.nats.url, name: `anvilkit-${this.owner}-background-relay` });
+		this.nc = await connect(natsOptions(this.cfg, `anvilkit-${this.owner}-background-relay`));
 		const jsm = await jetstreamManager(this.nc);
 		const stream = streamOf[this.owner];
 		const subject = `anvilkit.${this.owner}.background.requested`;
