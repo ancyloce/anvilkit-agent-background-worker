@@ -172,14 +172,19 @@ export function identityEnv(): Record<string, string> {
 	};
 }
 
-/** A configuration for the tests: the reviewed file plus the lab's placements and the lab PKI. */
+/**
+ * A configuration for the tests: the reviewed file plus the lab's placements
+ * and the lab PKI. The lab's PostgreSQL, Valkey and NATS are plaintext
+ * without credentials, admitted only under the DEVELOPMENT_ONLY guard (P0.6).
+ */
 export function labConfig(lab: Lab, overrides: Record<string, string> = {}, fileContent = ""): Config {
 	const dir = mkdtempSync(path.join(tmpdir(), "bg-worker-"));
 	const file = path.join(dir, "config.yaml");
 	writeFileSync(
 		file,
-		fileContent ||
-			"relay:\n  reconcile_interval: 1s\n  reconcile_age: 0ms\nworker:\n  heartbeat_interval: 200ms\n  handler_timeout: 2s\n  submit_retries: 2\n  shutdown_timeout: 5s\n",
+		"development:\n  enabled: true\nnats:\n  tls:\n    mode: development\n" +
+			(fileContent ||
+				"relay:\n  reconcile_interval: 1s\n  reconcile_age: 0ms\nworker:\n  heartbeat_interval: 200ms\n  handler_timeout: 2s\n  submit_retries: 2\n  shutdown_timeout: 5s\n"),
 	);
 	return loadFrom(file, {
 		ANVILKIT_BACKGROUND_WORKER_QUEUE_URL: lab.queueUrl,

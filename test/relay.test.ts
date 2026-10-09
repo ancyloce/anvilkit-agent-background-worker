@@ -35,7 +35,7 @@ const conns: ReturnType<typeof connection>[] = [];
 const relays: Relay[] = [];
 
 function newRelay(owner = new FakeOwner()) {
-	const conn = connection(cfg.queue.url);
+	const conn = connection(cfg.queue);
 	conns.push(conn);
 	const { metrics, registry } = newMetrics();
 	const relay = new Relay(cfg, "knowledge", owner, conn, metrics, silentLogger);

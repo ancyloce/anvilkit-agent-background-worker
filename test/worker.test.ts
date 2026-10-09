@@ -50,7 +50,7 @@ function script(taskId: string, input: Buffer, extra: Partial<Parameters<FakeOwn
 }
 
 function newWorker() {
-	const conn = connection(cfg.queue.url);
+	const conn = connection(cfg.queue);
 	conns.push(conn);
 	const { metrics, registry } = newMetrics();
 	const client = connectOwner("knowledge", owner.address, 2000, transports.for("knowledge"));
@@ -170,7 +170,7 @@ describe("background worker", () => {
 			),
 			silentLogger,
 		);
-		const conn = connection(cfg.queue.url);
+		const conn = connection(cfg.queue);
 		conns.push(conn);
 		const queue = new Queue<JobPayload>("local-check", { connection: conn, prefix: "anvilkit:knowledge" });
 		const payload = script("t_queue", localCheck());
@@ -210,8 +210,8 @@ it("F06 recreated deliveries in one live worker receive distinct identities", as
 });
 
 it("F12 bounds shutdown of a handler that ignores its abort signal", async () => {
-	const conn = connection(cfg.queue.url);
-	const monitor = connection(cfg.queue.url);
+	const conn = connection(cfg.queue);
+	const monitor = connection(cfg.queue);
 	const client = connectOwner("knowledge", owner.address, 2000, transports.for("knowledge"));
 	const { metrics } = newMetrics();
 	const bounded = {
@@ -275,7 +275,7 @@ it("F12 bounds shutdown of a handler that ignores its abort signal", async () =>
 		if (!task) throw new Error("owner task missing");
 		const priorIdentity = task.workerId;
 		task.state = TaskState.TASK_STATE_PENDING;
-		recoveryConn = connection(cfg.queue.url);
+		recoveryConn = connection(cfg.queue);
 		replacement = new BackgroundWorker(bounded, { knowledge: client }, recoveryConn, metrics, silentLogger);
 		replacement.start();
 		await expect
@@ -323,8 +323,8 @@ it("F12 interrupts unresponsive queue finalization after owner acceptance and re
 		.withWaitStrategy(Wait.forLogMessage(/Ready to accept connections/))
 		.start();
 	const url = `redis://${valkey.getHost()}:${valkey.getMappedPort(6379)}`;
-	const conn = connection(url);
-	const monitor = connection(url);
+	const conn = connection({ ...cfg.queue, url });
+	const monitor = connection({ ...cfg.queue, url });
 	const client = connectOwner("knowledge", owner.address, 2000, transports.for("knowledge"));
 	const { metrics, registry } = newMetrics();
 	const bounded = {
@@ -396,7 +396,7 @@ it("F12 interrupts unresponsive queue finalization after owner acceptance and re
 			.toBe(1);
 		// The owner has accepted, but BullMQ's original active job still needs
 		// recovery. A new worker must not execute or submit that result again.
-		recoveryConn = connection(url);
+		recoveryConn = connection({ ...cfg.queue, url });
 		replacement = new BackgroundWorker(bounded, { knowledge: client }, recoveryConn, metrics, silentLogger);
 		replacement.start();
 		const recoveredQueue = replacement.queueHandles.find((queue) => queue.name === "local-check");

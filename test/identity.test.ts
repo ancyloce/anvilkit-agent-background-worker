@@ -14,6 +14,8 @@ import { connectOwner, OwnerTransports, OwnerUnavailable } from "../src/owner.js
 import { type CA, files, issue, type Leaf, mount, newCA, spiffe, tempDir } from "./pki.js";
 
 const workerURI = spiffe("anvilkit.local", "anvilkit-apps", "anvilkit-agent-background-worker");
+// Outside development the queue is rediss:// with an ACL user (P0.6); never dialed here.
+const queueUrl = "rediss://background-worker:pw@anvilkit-queue-valkey.anvilkit-data.svc:6379";
 const ownerURI = spiffe("anvilkit.local", "anvilkit-apps", "anvilkit-agent-knowledge");
 const ownerLeaf = (ca: CA) => issue(ca, "anvilkit-agent-knowledge", [ownerURI], ["anvilkit-agent-knowledge"]);
 
@@ -43,7 +45,7 @@ function workerConfig(dir: string, mode = "mtls", development = false) {
 	writeFileSync(file, `development:\n  enabled: ${development}\nidentity:\n  mode: ${mode}\n`);
 	const f = files(dir);
 	return loadFrom(file, {
-		ANVILKIT_BACKGROUND_WORKER_QUEUE_URL: "redis://127.0.0.1:1",
+		ANVILKIT_BACKGROUND_WORKER_QUEUE_URL: queueUrl,
 		ANVILKIT_BACKGROUND_WORKER_KNOWLEDGE_ADDRESS: "127.0.0.1:1",
 		ANVILKIT_BACKGROUND_WORKER_IDENTITY_CERT_FILE: f.certFile,
 		ANVILKIT_BACKGROUND_WORKER_IDENTITY_KEY_FILE: f.keyFile,
@@ -140,12 +142,12 @@ describe("owner transport identity", () => {
 		const cfgDir = mkdtempSync(path.join(tmpdir(), "bg-identity-"));
 		const file = path.join(cfgDir, "config.yaml");
 		writeFileSync(file, "{}\n");
-		expect(() => loadFrom(file, { ANVILKIT_BACKGROUND_WORKER_QUEUE_URL: "redis://127.0.0.1:1" })).toThrow(
+		expect(() => loadFrom(file, { ANVILKIT_BACKGROUND_WORKER_QUEUE_URL: queueUrl })).toThrow(
 			/identity.cert_file, key_file and ca_file are required/,
 		);
 		const f = files(dir);
 		const relay = loadFrom(file, {
-			ANVILKIT_BACKGROUND_WORKER_QUEUE_URL: "redis://127.0.0.1:1",
+			ANVILKIT_BACKGROUND_WORKER_QUEUE_URL: queueUrl,
 			ANVILKIT_BACKGROUND_WORKER_IDENTITY_MODE: "mtls",
 			ANVILKIT_BACKGROUND_WORKER_IDENTITY_CERT_FILE: f.certFile,
 			ANVILKIT_BACKGROUND_WORKER_IDENTITY_KEY_FILE: f.keyFile,
@@ -156,7 +158,7 @@ describe("owner transport identity", () => {
 		expect(relay.owners.knowledge.serverName).toBe("anvilkit-agent-mcp-fullname");
 		expect(() =>
 			loadFrom(file, {
-				ANVILKIT_BACKGROUND_WORKER_QUEUE_URL: "redis://127.0.0.1:1",
+				ANVILKIT_BACKGROUND_WORKER_QUEUE_URL: queueUrl,
 				ANVILKIT_BACKGROUND_WORKER_DEVELOPMENT_ENABLED: "true",
 			}),
 		).toThrow(/not allowed overrides/);
