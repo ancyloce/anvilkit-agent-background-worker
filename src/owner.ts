@@ -413,3 +413,41 @@ export function connectProjection(address: string, timeoutMs: number, t: Transpo
 		close: () => c.close(),
 	};
 }
+
+export type RefreshProgress =
+	| { state: "completed"; resultRef: string; resultDigest: string }
+	| { state: "failed"; failureCode: string };
+
+export interface RefreshClient {
+	advanceRefresh(taskId: string, generation: string, workerId: string, inputDigest: string): Promise<RefreshProgress>;
+	close(): void;
+}
+
+/**
+ * MCP's CatalogRefreshService for mcp-catalog-refresh claims (P2.5): the
+ * current claimant asks MCP to re-read the approved revision's live server
+ * through MCP's own connection layer and record whether it drifted. Nothing
+ * about the server crosses. A live read can take as long as a discovery
+ * handshake, so the caller gives this call its own deadline.
+ */
+export function connectRefresh(address: string, timeoutMs: number, t: Transport): RefreshClient {
+	const c = new mcp.CatalogRefreshServiceClient(address, t.creds, t.options);
+	return {
+		async advanceRefresh(taskId, generation, workerId, inputDigest) {
+			const req = mcp.AdvanceRefreshRequest.fromPartial({ taskId, generation, workerId, inputDigest });
+			validated("anvilkit.mcp.v1.AdvanceRefreshRequest", mcp.AdvanceRefreshRequest.toJSON(req));
+			const res = await promised<mcp.AdvanceRefreshResponse>(timeoutMs, (md, o, cb) =>
+				c.advanceRefresh(req, md, o, cb),
+			);
+			switch (res.state) {
+				case mcp.RefreshState.REFRESH_STATE_COMPLETED:
+					return { state: "completed", resultRef: res.resultRef, resultDigest: res.resultDigest };
+				case mcp.RefreshState.REFRESH_STATE_FAILED:
+					return { state: "failed", failureCode: res.failureCode || "REFRESH_FAILED" };
+				default:
+					throw new OwnerUnavailable(`AdvanceRefresh answered state ${res.state}`);
+			}
+		},
+		close: () => c.close(),
+	};
+}

@@ -15,6 +15,7 @@ import {
 	connectIngest,
 	connectOwner,
 	connectProjection,
+	connectRefresh,
 	type OwnerClient,
 	OwnerTransports,
 } from "./owner.js";
@@ -24,6 +25,9 @@ import { Telemetry } from "./telemetry.js";
 import { createBoard } from "./worker/board.js";
 import { handlersFor } from "./worker/handlers.js";
 import { BackgroundWorker } from "./worker/worker.js";
+
+/** The refresh step's deadline floor (P2.5): above MCP's default discovery bound. */
+const refreshTimeoutMs = 90_000;
 
 export interface Started {
 	stop(): Promise<void>;
@@ -71,6 +75,12 @@ export async function startWorker(cfg: Config, log: Logger = jsonLogger()): Prom
 	const ingest = k ? connectIngest(cfg.owners.knowledge.address, cfg.worker.ownerTimeoutMs, k) : undefined;
 	const index = k ? connectIndex(cfg.owners.knowledge.address, cfg.worker.ownerTimeoutMs, k) : undefined;
 	const projection = k ? connectProjection(cfg.owners.knowledge.address, cfg.worker.ownerTimeoutMs, k) : undefined;
+	// P2.5: MCP's live re-read may take as long as a discovery handshake (its
+	// ContextForge timeout, 60s by default): the refresh step's own deadline.
+	const m = cfg.owners.mcp.address ? transports.for("mcp") : undefined;
+	const refresh = m
+		? connectRefresh(cfg.owners.mcp.address, Math.max(cfg.worker.ownerTimeoutMs, refreshTimeoutMs), m)
+		: undefined;
 	const conn = connection(cfg.queue);
 	const telemetry = new Telemetry(cfg.telemetry, "anvilkit-agent-background-worker");
 	const worker = new BackgroundWorker(
@@ -79,7 +89,7 @@ export async function startWorker(cfg: Config, log: Logger = jsonLogger()): Prom
 		conn,
 		metrics,
 		log,
-		handlersFor(ingest, index, projection),
+		handlersFor(ingest, index, projection, refresh),
 		telemetry,
 	);
 	let board: Server | undefined;
@@ -107,6 +117,7 @@ export async function startWorker(cfg: Config, log: Logger = jsonLogger()): Prom
 		ingest?.close();
 		index?.close();
 		projection?.close();
+		refresh?.close();
 		transports.close();
 		throw err;
 	}
@@ -127,6 +138,7 @@ export async function startWorker(cfg: Config, log: Logger = jsonLogger()): Prom
 			ingest?.close();
 			index?.close();
 			projection?.close();
+			refresh?.close();
 			transports.close();
 			metrics.drainSeconds.set((Date.now() - begin) / 1000);
 			if (forced) metrics.forcedStop.set(1);
