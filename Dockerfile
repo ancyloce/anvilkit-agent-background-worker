@@ -36,10 +36,10 @@ COPY --from=build /src/dist ./dist
 COPY package.json ./package.json
 COPY config.yaml /etc/anvilkit/anvilkit-agent-background-worker/config.yaml
 COPY --from=contracts events/events.schema.json /anvilkit/contracts/events/events.schema.json
-# events/events.schema.json of contracts commit 1307fb26895509b690e315bab3dd180ad3a0c4e6
-# (tag go/v0.1.9, the commit @anvilkit/generated-clients is pinned to; line
+# events/events.schema.json of contracts commit 1c3ef955b34f7a28e0ba1aabd7a275d030bf2236
+# (tag go/v0.1.10, the commit @anvilkit/generated-clients is pinned to; line
 # endings normalized: a CRLF checkout carries the same document).
-ARG CONTRACT_SHA256=89c5569ccf1d5cf6c3e12cf4ba4d71036fe0334044d06fa3a6c69052eb0c0aff
+ARG CONTRACT_SHA256=b371d16738cc2d9fed25f68eaa4e7f844ab6e9095ef5c892c752b13f73a1da9b
 RUN test "$(tr -d '\r' < /anvilkit/contracts/events/events.schema.json | sha256sum | cut -d' ' -f1)" = "$CONTRACT_SHA256" \
  || { echo "events/events.schema.json is not the document of the pinned contracts revision" >&2; exit 1; }
 ENV ANVILKIT_BACKGROUND_WORKER_CONFIG=/etc/anvilkit/anvilkit-agent-background-worker/config.yaml \
