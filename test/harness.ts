@@ -72,6 +72,8 @@ export async function startLab(): Promise<Lab> {
 		"CREATE ROLE anvilkit_knowledge_migrator LOGIN PASSWORD 'migrator'",
 		"CREATE ROLE anvilkit_knowledge_relay LOGIN PASSWORD 'relay'",
 		"CREATE ROLE anvilkit_knowledge_forwarder LOGIN PASSWORD 'forwarder'",
+		// P2.7: the cleanup identity the Knowledge migrations grant to.
+		"CREATE ROLE anvilkit_knowledge_cleanup LOGIN PASSWORD 'cleanup'",
 		// P17: migration 00005 lets the PostgresStore vendor identity create its schema.
 		"CREATE ROLE anvilkit_knowledge_store_migrator LOGIN PASSWORD 'storemig'",
 		"CREATE DATABASE anvilkit_knowledge OWNER anvilkit_knowledge_migrator",
