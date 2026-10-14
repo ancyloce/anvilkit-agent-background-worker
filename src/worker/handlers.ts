@@ -7,8 +7,8 @@
 // claim) and, since P16, knowledge-project (the index step of one source
 // revision in one generation) and, since P17, memory-project (the
 // application of one fact's current state to one projection target).
-// Catalog refresh arrives with P18; an unknown kind is a controlled failure,
-// never a guess.
+// since P2.5, mcp-catalog-refresh (MCP's own live re-read of one approved
+// revision). An unknown kind is a controlled failure, never a guess.
 import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseStrictJson } from "@anvilkit/generated-clients/validation/json";
@@ -19,6 +19,7 @@ import {
 	OwnerRefused,
 	OwnerUnavailable,
 	type ProjectionClient,
+	type RefreshClient,
 } from "../owner.js";
 
 /** The claim a handler runs under: identities and the input digest come from the owner, never the queue. */
@@ -180,16 +181,69 @@ function stepUntilMaterialized(computation: string, step: (ctx: HandlerContext) 
 	};
 }
 
-/** The handlers of this build; the Knowledge kinds exist when Knowledge's IngestService is reachable. */
+/**
+ * mcp-catalog-refresh (P2.5): the claimant asks MCP to re-read the approved
+ * revision's live server and record whether it still digests as approved,
+ * then reports exactly the reference and digest MCP recorded (drift or not:
+ * acceptance of a drift is what disables the revision). The Worker never
+ * sees the server, its tools or its credential. An unreachable owner is
+ * asked again within the lease (the call is idempotent per generation), a
+ * refusal ends the handler.
+ */
+export function mcpCatalogRefresh(client: RefreshClient): Handler {
+	return async (input, ctx) => {
+		let raw: unknown;
+		try {
+			raw = parseStrictJson(input.toString("utf8"));
+		} catch {
+			throw new HandlerError("INPUT_MALFORMED");
+		}
+		const p = raw as {
+			schemaVersion?: unknown;
+			serverId?: unknown;
+			revision?: unknown;
+			descriptorDigest?: unknown;
+		} | null;
+		if (
+			p?.schemaVersion !== 1 ||
+			typeof p.serverId !== "string" ||
+			p.serverId === "" ||
+			typeof p.revision !== "number" ||
+			typeof p.descriptorDigest !== "string" ||
+			!/^sha256:[0-9a-f]{64}$/.test(p.descriptorDigest)
+		)
+			throw new HandlerError("INPUT_MALFORMED");
+		for (;;) {
+			if (ctx.signal.aborted) throw new HandlerError("ABORTED");
+			try {
+				const a = await client.advanceRefresh(ctx.taskId, ctx.generation, ctx.workerId, ctx.inputDigest);
+				if (a.state === "completed") return { succeeded: true, resultRef: a.resultRef, resultDigest: a.resultDigest };
+				return { succeeded: false, failureCode: a.failureCode };
+			} catch (err) {
+				if (err instanceof OwnerRefused) throw new HandlerError(err.reason);
+				if (!(err instanceof OwnerUnavailable)) throw err;
+			}
+			try {
+				await sleep(pollMaxMs, undefined, { signal: ctx.signal });
+			} catch {
+				throw new HandlerError("ABORTED");
+			}
+		}
+	};
+}
+
+/** The handlers of this build; each owner kind exists when its owner's step service is reachable. */
 export function handlersFor(
 	ingest?: IngestClient,
 	index?: IndexClient,
 	projection?: ProjectionClient,
+	refresh?: RefreshClient,
 ): Record<string, Handler> {
 	const out: Record<string, Handler> = { "local-check": localCheck };
 	if (ingest) out["knowledge-ingest"] = knowledgeIngest(ingest);
 	if (index) out["knowledge-project"] = knowledgeProject(index);
 	if (projection) out["memory-project"] = memoryProject(projection);
+	if (refresh) out["mcp-catalog-refresh"] = mcpCatalogRefresh(refresh);
 	return out;
 }
 
