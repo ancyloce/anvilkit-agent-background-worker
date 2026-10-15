@@ -19,4 +19,9 @@ Bull Board is off by default and read-only when on; a retry from a non-read-only
 
 ## Repository
 
-This package is the repository `anvilkit-agent-background-worker`, mounted in the parent `anvilkit-services` as the submodule `services/agent/background-worker`. Checked out on its own (as in CI), its checks take two inputs from outside it: the `anvilkit_knowledge` migrations through `ANVILKIT_KNOWLEDGE_MIGRATIONS_DIR` (they live in the parent's `jobs/migration/internal/migrate/sql/knowledge` until Knowledge owns them), and a checkout of the contracts repository at the commit `pnpm-lock.yaml` pins (`063f91f`, tag `go/v0.1.4`) through `ANVILKIT_BACKGROUND_WORKER_CONTRACTS_DIR` and as the image's `contracts` build context. Inside the parent checkout both are found without the variables.
+This package is the repository `anvilkit-agent-background-worker`, mounted in the parent `anvilkit-services` as the submodule `services/agent/background-worker`. Checked out on its own (as in CI), its checks take two inputs from outside it: the `anvilkit_knowledge` migrations through `ANVILKIT_KNOWLEDGE_MIGRATIONS_DIR` (they live in the parent's `jobs/migration/internal/migrate/sql/knowledge` until Knowledge owns them), and a checkout of the contracts repository at the commit `pnpm-lock.yaml` pins (the generated line below) through `ANVILKIT_BACKGROUND_WORKER_CONTRACTS_DIR` and as the image's `contracts` build context. Inside the parent checkout both are found without the variables.
+
+
+<!-- generated:contracts -->
+Contracts: this build pins `@anvilkit/generated-clients` to contracts commit `1c3ef95` (`package.json`; tag `go/v0.1.10`).
+<!-- /generated:contracts -->
