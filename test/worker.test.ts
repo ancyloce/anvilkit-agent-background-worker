@@ -397,7 +397,13 @@ it("F12 interrupts unresponsive queue finalization after owner acceptance and re
 		// The owner has accepted, but BullMQ's original active job still needs
 		// recovery. A new worker must not execute or submit that result again.
 		recoveryConn = connection({ ...cfg.queue, url });
-		replacement = new BackgroundWorker(bounded, { knowledge: client }, recoveryConn, metrics, silentLogger);
+		// The short lock and stall intervals recover the original delivery
+		// quickly; the 200 ms deadline exists to force the first worker. An idle
+		// BullMQ drain can take longer than that on a loaded host, so the
+		// replacement's graceful stop gets its own deadline (still far below the
+		// 30 s default): a hung replacement is still forced and reported.
+		const recovering = { ...bounded, worker: { ...bounded.worker, shutdownTimeoutMs: 5000 } };
+		replacement = new BackgroundWorker(recovering, { knowledge: client }, recoveryConn, metrics, silentLogger);
 		replacement.start();
 		const recoveredQueue = replacement.queueHandles.find((queue) => queue.name === "local-check");
 		if (!recoveredQueue) throw new Error("local-check queue missing");
