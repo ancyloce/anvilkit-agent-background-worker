@@ -23,5 +23,5 @@ This package is the repository `anvilkit-agent-background-worker`, mounted in th
 
 
 <!-- generated:contracts -->
-Contracts: this build pins `@anvilkit/generated-clients` to contracts commit `1c3ef95` (`package.json`; tag `go/v0.1.10`).
+Contracts: this build pins `@anvilkit/generated-clients` to contracts commit `2110fb1` (`package.json`; tag `go/v0.1.11`).
 <!-- /generated:contracts -->
