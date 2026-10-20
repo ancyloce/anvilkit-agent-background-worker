@@ -16,12 +16,12 @@
     "start": "node dist/main.js worker"
   },
   "dependencies": {
-    "@anvilkit/generated-clients": "github:ancyloce/anvilkit-agent-contracts#8727513577e2723ebd7c40439e094da1cd5ad88d&path:ts",
+    "@anvilkit/generated-clients": "github:ancyloce/anvilkit-agent-contracts#634d6495a06307a7d80901f0ea878ba7eaff1529&path:ts",
     "@bufbuild/protobuf": "2.15.0",
     "@bufbuild/protovalidate": "1.2.0",
     "@bull-board/api": "9.10.1",
     "@bull-board/express": "9.10.1",
-    "@grpc/grpc-js": "1.14.4",
+    "@grpc/grpc-js": "1.14.5",
     "@nats-io/jetstream": "3.4.0",
     "@nats-io/nats-core": "3.4.0",
     "@nats-io/transport-node": "3.4.0",

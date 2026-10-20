@@ -105,16 +105,13 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  '@grpc/grpc-js@1.14.4': 1.14.5
-
 importers:
 
   .:
     dependencies:
       '@anvilkit/generated-clients':
-        specifier: github:ancyloce/anvilkit-agent-contracts#8727513577e2723ebd7c40439e094da1cd5ad88d&path:ts
-        version: https://codeload.github.com/ancyloce/anvilkit-agent-contracts/tar.gz/8727513577e2723ebd7c40439e094da1cd5ad88d#path:ts
+        specifier: github:ancyloce/anvilkit-agent-contracts#634d6495a06307a7d80901f0ea878ba7eaff1529&path:ts
+        version: https://codeload.github.com/ancyloce/anvilkit-agent-contracts/tar.gz/634d6495a06307a7d80901f0ea878ba7eaff1529#path:ts
       '@bufbuild/protobuf':
         specifier: 2.15.0
         version: 2.15.0
@@ -209,8 +206,8 @@ importers:
 
 packages:
 
-  '@anvilkit/generated-clients@https://codeload.github.com/ancyloce/anvilkit-agent-contracts/tar.gz/8727513577e2723ebd7c40439e094da1cd5ad88d#path:ts':
-    resolution: {gitHosted: true, integrity: sha512-c9rc6iDmZ5OtTgYDXJD/QKb230rwxZkXgl20TLlLKF2JoIvXihEgzsW+YBveKd6o6fd4zg1Mitvsb6OqjQFizg==, path: ts, tarball: https://codeload.github.com/ancyloce/anvilkit-agent-contracts/tar.gz/8727513577e2723ebd7c40439e094da1cd5ad88d}
+  '@anvilkit/generated-clients@https://codeload.github.com/ancyloce/anvilkit-agent-contracts/tar.gz/634d6495a06307a7d80901f0ea878ba7eaff1529#path:ts':
+    resolution: {gitHosted: true, integrity: sha512-VXBEHYq9reJsH+f8O6GLTFrwL5QLJECxcZSTFcFwsNMrhAi61mFcI1iqleggKHgMdecJXKmaHAHrYlW7I7m2qQ==, path: ts, tarball: https://codeload.github.com/ancyloce/anvilkit-agent-contracts/tar.gz/634d6495a06307a7d80901f0ea878ba7eaff1529}
     version: 0.1.0
 
   '@balena/dockerignore@1.0.2':
@@ -1987,7 +1984,7 @@ packages:
 
 snapshots:
 
-  '@anvilkit/generated-clients@https://codeload.github.com/ancyloce/anvilkit-agent-contracts/tar.gz/8727513577e2723ebd7c40439e094da1cd5ad88d#path:ts':
+  '@anvilkit/generated-clients@https://codeload.github.com/ancyloce/anvilkit-agent-contracts/tar.gz/634d6495a06307a7d80901f0ea878ba7eaff1529#path:ts':
     dependencies:
       '@bufbuild/protobuf': 2.15.0
       '@bufbuild/protovalidate': 1.2.0(@bufbuild/protobuf@2.15.0)
