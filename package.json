@@ -16,7 +16,7 @@
     "start": "node dist/main.js worker"
   },
   "dependencies": {
-    "@anvilkit/generated-clients": "github:ancyloce/anvilkit-agent-contracts#0f7afcafc88bc7247b31322d3abe839c156b53f4&path:ts",
+    "@anvilkit/generated-clients": "github:ancyloce/anvilkit-agent-contracts#6ee298d8c9d2afe7a8e0f46a321db31d4c58f860&path:ts",
     "@bufbuild/protobuf": "2.15.0",
     "@bufbuild/protovalidate": "1.2.0",
     "@bull-board/api": "9.10.1",
