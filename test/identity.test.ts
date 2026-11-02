@@ -19,7 +19,7 @@ const queueUrl = "rediss://background-worker:pw@anvilkit-queue-valkey.anvilkit-d
 const ownerURI = spiffe("anvilkit.local", "anvilkit-apps", "anvilkit-agent-knowledge");
 const ownerLeaf = (ca: CA) => issue(ca, "anvilkit-agent-knowledge", [ownerURI], ["anvilkit-agent-knowledge"]);
 
-/** A NOT_FOUND-answering owner under the given CA bundle and leaf; setSecureContext rotates it. */
+/** A NOT_FOUND-answering owner under the given CA bundle and leaf; a rotation starts another owner. */
 async function owner(caPem: Buffer, leaf: Leaf): Promise<{ address: string; stop(): void }> {
 	const server = new Server();
 	server.addService(BackgroundTaskServiceService, {

@@ -1,5 +1,7 @@
 // The Worker's and the relay's clients of the owners' BackgroundTaskService
-// (anvilkit.knowledge.v1 and anvilkit.mcp.v1, the identical owner contract):
+// (anvilkit.knowledge.v1 and anvilkit.mcp.v1, the identical owner contract)
+// and the Worker's clients of the owners' step services its handlers call
+// (Knowledge's IngestService, MCP's CatalogRefreshService):
 // every request passes the contract's explicit TypeScript validation before
 // it is sent; a refusal keeps the owner's public code. The Worker never
 // touches a domain table: these calls are its only path to durable state.

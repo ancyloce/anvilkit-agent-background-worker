@@ -1,8 +1,9 @@
 # Chart values of anvilkit-agent-background-worker: the BullMQ Worker
-# Deployment. It reaches the owners' BackgroundTaskService and the queue
-# Valkey only (no business database, no NATS: the relays are the owners'
-# sidecars). Environment values are supplied by the deploying repository;
-# secrets never enter this chart.
+# Deployment. It reaches the owners' BackgroundTaskService, the step
+# services its handlers call (Knowledge's IngestService, MCP's
+# CatalogRefreshService) and the queue Valkey only (no business database,
+# no NATS: the relays are the owners' sidecars). Environment values are
+# supplied by the deploying repository; secrets never enter this chart.
 
 image:
   repository: anvilkit-agent-background-worker
@@ -15,8 +16,10 @@ replicaCount: 2
 
 # HorizontalPodAutoscaler (autoscaling/v2). Off unless the environment enables
 # it with an explicit maxReplicas: the maximum is bounded by downstream caps
-# and the database connection budget (deploy/gitops/lock.yaml), never a chart
-# default. While enabled the Deployment leaves replicas to the autoscaler.
+# (the worker holds no database pool; the relays are the owners' sidecars)
+# and declared in the deployment lock (deploy/gitops/lock.yaml), never a
+# chart default. While enabled the Deployment leaves replicas to the
+# autoscaler.
 autoscaling:
   enabled: false
   minReplicas: 2
@@ -94,7 +97,8 @@ secrets:
 trust:
   configMap: ""
 
-# The owners' BackgroundTaskService placements; at least one is required.
+# The owners' placements (BackgroundTaskService and the handlers' step
+# services); at least one is required.
 owners:
   knowledge:
     address: ""
@@ -119,7 +123,9 @@ config:
     lease_seconds: 60
     heartbeat_interval: 15s
     max_input_bytes: 65536
-    handler_timeout: 5m
+    # Above the parser profile's 600 s deadline plus Knowledge's 30 s grace
+    # (config.yaml): a slow parse ends on the Job's deadline, not on this bound.
+    handler_timeout: 12m
     attempts: 3
     backoff: 5s
     lock_duration: 60s

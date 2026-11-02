@@ -1,10 +1,12 @@
 # Reviewed configuration of anvilkit-agent-background-worker (DD-09 §1/§4):
 # the secret-free, placement-free bounds of the Worker (`worker` entry) and
 # of the owner queue relay (`relay` entry, run beside each owner). Placements
-# and secrets arrive only through the allowlisted environment:
+# and secrets arrive only through the allowlisted environment (the complete
+# set: envOverrides in src/config.ts):
 # ANVILKIT_BACKGROUND_WORKER_HEALTH_LISTEN, _IDENTITY_MODE,
-# _IDENTITY_{CERT,KEY,CA}_FILE, _OWNER_SERVER_NAME, _QUEUE_URL or _QUEUE_URL_FILE (the
-# queue Valkey — a separate instance from any cache), _QUEUE_TLS_CA_FILE,
+# _IDENTITY_{CERT,KEY,CA}_FILE, _OWNER_SERVER_NAME, _TELEMETRY_OTLP_ENDPOINT,
+# _QUEUE_URL or _QUEUE_URL_FILE (the queue Valkey — a separate instance from
+# any cache), _QUEUE_TLS_CA_FILE,
 # _NATS_URL, _NATS_TLS_{MODE,CA_FILE,CERT_FILE,KEY_FILE,SERVER_NAME},
 # _NATS_CREDS_FILE (the relay's NATS credential),
 # _KNOWLEDGE_ADDRESS, _MCP_ADDRESS, _CONTRACTS_DIR, _BULL_BOARD_LISTEN,

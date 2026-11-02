@@ -43,7 +43,7 @@ COPY package.json ./package.json
 COPY config.yaml /etc/anvilkit/anvilkit-agent-background-worker/config.yaml
 COPY --from=contracts events/events.schema.json /anvilkit/contracts/events/events.schema.json
 # events/events.schema.json of contracts commit b3fe8697697902fb8c0767c2463f0af7c945842a
-# (tag go/v0.1.16, the commit @anvilkit/generated-clients is pinned to; line
+# (tag go/v0.1.18, the commit @anvilkit/generated-clients is pinned to; line
 # endings normalized: a CRLF checkout carries the same document).
 ARG CONTRACT_SHA256=b371d16738cc2d9fed25f68eaa4e7f844ab6e9095ef5c892c752b13f73a1da9b
 RUN test "$(tr -d '\r' < /anvilkit/contracts/events/events.schema.json | sha256sum | cut -d' ' -f1)" = "$CONTRACT_SHA256" \

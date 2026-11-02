@@ -3,7 +3,7 @@
 # Valkey and NATS through Testcontainers; the anvilkit_knowledge migrations
 # come from a sparse checkout of the parent), the image (the events schema
 # from a checkout of the contracts repository at the commit pnpm-lock.yaml and
-# the Dockerfile's digest pin: 1c3ef95, tag go/v0.1.10) and the chart.
+# the Dockerfile's digest pin: b3fe869, tag go/v0.1.18) and the chart.
 name: ci
 on:
   push:
