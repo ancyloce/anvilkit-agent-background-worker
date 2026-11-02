@@ -351,6 +351,28 @@ export interface IndexClient {
 }
 
 /**
+ * The progress of an answer in knowledge.IndexState (AdvanceIndex and
+ * AdvanceProjection): a FAILED answer without a code fails with
+ * failedCode, an unknown state names rpc.
+ */
+function indexProgress(
+	rpc: string,
+	failedCode: string,
+	res: Pick<knowledge.AdvanceIndexResponse, "state" | "resultRef" | "resultDigest" | "failureCode" | "retryAfterMs">,
+): IndexProgress {
+	switch (res.state) {
+		case knowledge.IndexState.INDEX_STATE_MATERIALIZED:
+			return { state: "materialized", resultRef: res.resultRef, resultDigest: res.resultDigest };
+		case knowledge.IndexState.INDEX_STATE_FAILED:
+			return { state: "failed", failureCode: res.failureCode || failedCode };
+		case knowledge.IndexState.INDEX_STATE_RUNNING:
+			return { state: "running", retryAfterMs: res.retryAfterMs };
+		default:
+			throw new OwnerUnavailable(`${rpc} answered state ${res.state}`);
+	}
+}
+
+/**
  * Knowledge's IngestService for knowledge-project claims: the current
  * claimant asks Knowledge to write and verify the next batch of its index
  * entry. No text, vector, key or collection name crosses.
@@ -364,16 +386,7 @@ export function connectIndex(address: string, timeoutMs: number, t: Transport): 
 			const res = await promised<knowledge.AdvanceIndexResponse>(timeoutMs, (md, o, cb) =>
 				c.advanceIndex(req, md, o, cb),
 			);
-			switch (res.state) {
-				case knowledge.IndexState.INDEX_STATE_MATERIALIZED:
-					return { state: "materialized", resultRef: res.resultRef, resultDigest: res.resultDigest };
-				case knowledge.IndexState.INDEX_STATE_FAILED:
-					return { state: "failed", failureCode: res.failureCode || "INDEX_FAILED" };
-				case knowledge.IndexState.INDEX_STATE_RUNNING:
-					return { state: "running", retryAfterMs: res.retryAfterMs };
-				default:
-					throw new OwnerUnavailable(`AdvanceIndex answered state ${res.state}`);
-			}
+			return indexProgress("AdvanceIndex", "INDEX_FAILED", res);
 		},
 		close: () => c.close(),
 	};
@@ -399,16 +412,7 @@ export function connectProjection(address: string, timeoutMs: number, t: Transpo
 			const res = await promised<knowledge.AdvanceProjectionResponse>(timeoutMs, (md, o, cb) =>
 				c.advanceProjection(req, md, o, cb),
 			);
-			switch (res.state) {
-				case knowledge.IndexState.INDEX_STATE_MATERIALIZED:
-					return { state: "materialized", resultRef: res.resultRef, resultDigest: res.resultDigest };
-				case knowledge.IndexState.INDEX_STATE_FAILED:
-					return { state: "failed", failureCode: res.failureCode || "PROJECTION_FAILED" };
-				case knowledge.IndexState.INDEX_STATE_RUNNING:
-					return { state: "running", retryAfterMs: res.retryAfterMs };
-				default:
-					throw new OwnerUnavailable(`AdvanceProjection answered state ${res.state}`);
-			}
+			return indexProgress("AdvanceProjection", "PROJECTION_FAILED", res);
 		},
 		close: () => c.close(),
 	};

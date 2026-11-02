@@ -1,14 +1,17 @@
 // The bounded handlers of this build, selected by the task kind the owner
-// returned with the claim (never by the queue entry alone): the
-// local-check fixture of P14 (a DEVELOPMENT_ONLY fixed computation, the
-// SHA-256 of declared bytes, whose input can make it hold, fail or answer
-// wrongly so the lane's fences are verifiable) and, since P15,
-// knowledge-ingest (the parse step Knowledge's launcher runs for the
-// claim) and, since P16, knowledge-project (the index step of one source
-// revision in one generation) and, since P17, memory-project (the
-// application of one fact's current state to one projection target).
-// since P2.5, mcp-catalog-refresh (MCP's own live re-read of one approved
-// revision). An unknown kind is a controlled failure, never a guess.
+// returned with the claim, never by the queue entry alone:
+//   - local-check: a DEVELOPMENT_ONLY fixed computation (the SHA-256 of
+//     declared bytes) whose input can make it hold, fail or answer wrongly,
+//     so the lane's fences are verifiable;
+//   - knowledge-ingest, knowledge-project, memory-project: Knowledge's parse
+//     step for the claim, the index step of one source revision in one
+//     generation, and the application of one fact's current state to one
+//     projection target;
+//   - mcp-catalog-refresh: MCP's own live re-read of one approved revision.
+// An owner kind asks its owner to perform and verify the step and reports
+// exactly the reference and digest the owner recorded; it exists only when
+// that owner's address is configured (handlersFor). An unknown kind is a
+// controlled failure (HANDLER_UNKNOWN), never a guess.
 import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseStrictJson } from "@anvilkit/generated-clients/validation/json";
@@ -232,7 +235,7 @@ export function mcpCatalogRefresh(client: RefreshClient): Handler {
 	};
 }
 
-/** The handlers of this build; each owner kind exists when its owner's step service is reachable. */
+/** The handlers of this build; each owner kind exists when its owner's client is configured. */
 export function handlersFor(
 	ingest?: IngestClient,
 	index?: IndexClient,
