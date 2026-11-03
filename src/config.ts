@@ -206,7 +206,9 @@ const defaults: Raw = {
 		lease_seconds: 60,
 		heartbeat_interval: "15s",
 		max_input_bytes: 65536,
-		handler_timeout: "5m",
+		// The reviewed bound (config.yaml): above the parser profile's 600 s
+		// deadline plus its grace, so a slow parse ends on the Job's deadline.
+		handler_timeout: "12m",
 		attempts: 3,
 		backoff: "5s",
 		lock_duration: "60s",
@@ -563,7 +565,7 @@ function validate(raw: Raw): Config {
 			leaseSeconds: lease,
 			heartbeatIntervalMs: heartbeat,
 			maxInputBytes: attempt(() => int(raw, "worker.max_input_bytes", 1, 65536), 65536),
-			handlerTimeoutMs: attempt(() => duration(raw, "worker.handler_timeout", 100, 3_600_000), 300_000),
+			handlerTimeoutMs: attempt(() => duration(raw, "worker.handler_timeout", 100, 3_600_000), 720_000),
 			attempts: attempt(() => int(raw, "worker.attempts", 1, 100), 3),
 			backoffMs: attempt(() => duration(raw, "worker.backoff", 0, 3_600_000), 5000),
 			lockDurationMs: lock,

@@ -368,3 +368,11 @@ describe("data-plane clients against TLS doubles (P0.6)", () => {
 		expect(n.connects[0]).toMatchObject({ nkey: user.getPublicKey() });
 	});
 });
+
+describe("worker bounds", () => {
+	it("defaults the handler bound to the reviewed 12m above the parser deadline; an explicit bound is kept", () => {
+		expect(load("{}\n", secure).worker.handlerTimeoutMs).toBe(720_000);
+		expect(loadFrom(path.resolve("config.yaml"), secure).worker.handlerTimeoutMs).toBe(720_000);
+		expect(load("worker:\n  handler_timeout: 90s\n", secure).worker.handlerTimeoutMs).toBe(90_000);
+	});
+});
