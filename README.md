@@ -11,11 +11,20 @@ Bull Board is off by default and read-only when on; a retry from a non-read-only
 
 ## Configuration
 
-`config.yaml` holds the reviewed bounds; placements and secrets come only from `ANVILKIT_BACKGROUND_WORKER_{HEALTH_LISTEN,QUEUE_URL[_FILE],NATS_URL,KNOWLEDGE_ADDRESS,MCP_ADDRESS,CONTRACTS_DIR,BULL_BOARD_LISTEN,RELAY_OWNER,RELAY_DATABASE_URL[_FILE]}`; any other variable or unknown key rejects the candidate. `/healthz`, `/readyz` and `/metrics` (queue waiting/failed/delayed/lag, stalls, lease losses, handler timeouts, submit retries, inbox outcomes/duplicates/gaps, reconstructed entries, drain time) answer on the health listener.
+`config.yaml` (path from `ANVILKIT_BACKGROUND_WORKER_CONFIG`) holds the reviewed bounds. The environment overrides are exactly `envOverrides` in `src/config.ts`: `ANVILKIT_BACKGROUND_WORKER_{HEALTH_LISTEN,IDENTITY_MODE,IDENTITY_CERT_FILE,IDENTITY_KEY_FILE,IDENTITY_CA_FILE,OWNER_SERVER_NAME,TELEMETRY_OTLP_ENDPOINT,QUEUE_URL[_FILE],QUEUE_TLS_CA_FILE,NATS_URL,NATS_TLS_MODE,NATS_TLS_CA_FILE,NATS_TLS_CERT_FILE,NATS_TLS_KEY_FILE,NATS_TLS_SERVER_NAME,NATS_CREDS_FILE,KNOWLEDGE_ADDRESS,MCP_ADDRESS,CONTRACTS_DIR,BULL_BOARD_LISTEN,RELAY_OWNER,RELAY_DATABASE_URL[_FILE]}`. The placements and secrets among them (`environmentOnly`: the telemetry endpoint, the queue URL, the NATS URL and credential file, the owner addresses, the contracts directory, the relay owner and database URL) are refused inside the file; any other `ANVILKIT_BACKGROUND_WORKER_*` variable or unknown key rejects the candidate. `/healthz`, `/readyz` and `/metrics` (jobs and active jobs, queue waiting/failed/delayed/oldest-waiting age, stalls, lease losses, handler timeouts, submit retries, inbox outcomes/duplicates/gaps, enqueued and reconstructed entries, requests without a queue entry, drain time, forced shutdowns, the configuration generation) answer on the health listener.
 
 ## Checks
 
-`pnpm install --frozen-lockfile --ignore-scripts && pnpm run check-types && pnpm run lint && pnpm run build && pnpm test` (Vitest; Docker-backed PostgreSQL 17, Valkey 9 and NATS 2.12 through Testcontainers; the `anvilkit_knowledge` migrations are found beside this package in the parent checkout or through `ANVILKIT_KNOWLEDGE_MIGRATIONS_DIR`; the owner of the worker tests is a scripted gRPC double — the real owners are exercised by the parent's integration scenario), `docker build --build-context contracts=<contracts checkout> .`, `helm lint deploy/chart`.
+`pnpm install --frozen-lockfile --ignore-scripts && pnpm run check-types && pnpm run lint && pnpm run build && pnpm test` (Vitest; Docker-backed PostgreSQL 17, Valkey 9 and NATS 2.12 through Testcontainers; the `anvilkit_knowledge` migrations are found beside this package in the parent checkout or through `ANVILKIT_KNOWLEDGE_MIGRATIONS_DIR`; the owner of the worker tests is a scripted gRPC double — the real owners are exercised by the parent's integration scenario), `docker build --build-context contracts=<contracts checkout> .`.
+
+The chart renders outside development only with the queue Secret, at least one owner address, the workload identity's trust domain and issuer, and the image digest. `helm lint` with the values of the `chart` job in `.github/workflows/ci.yml` (`helm template anvilkit-agent-background-worker deploy/chart` takes the same):
+
+```sh
+helm lint deploy/chart --set queue.secret.name=queue-valkey \
+  --set owners.knowledge.address=anvilkit-agent-knowledge:9105 --set owners.mcp.address=anvilkit-agent-mcp:9106 \
+  --set identity.trustDomain=ci.example --set identity.certificate.issuerRef.name=ci-issuer \
+  --set image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000001
+```
 
 ## Repository
 
