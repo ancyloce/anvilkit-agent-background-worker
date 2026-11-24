@@ -3,7 +3,7 @@
 # Valkey and NATS through Testcontainers; the anvilkit_knowledge migrations
 # come from a sparse checkout of the parent), the image (the events schema
 # from a checkout of the contracts repository at the commit pnpm-lock.yaml and
-# the Dockerfile's digest pin: b3fe869, tag go/v0.1.18) and the chart.
+# the Dockerfile's digest pin: 0f4bbd0, tag go/v0.1.53) and the chart.
 name: ci
 on:
   push:
@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: ancyloce/anvilkit-agent-contracts
-          ref: e707f7e1c712111e4ee520ceb36ace9a390bdb28
+          ref: 0f4bbd0d95cbed44fde6e958211d017c49c50231
           path: contracts
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -52,7 +52,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: ancyloce/anvilkit-agent-contracts
-          ref: e707f7e1c712111e4ee520ceb36ace9a390bdb28
+          ref: 0f4bbd0d95cbed44fde6e958211d017c49c50231
           path: contracts
       - run: docker build --build-context contracts=contracts -t anvilkit-agent-background-worker:ci .
   chart:
